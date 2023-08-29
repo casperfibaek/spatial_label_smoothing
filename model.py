@@ -237,12 +237,12 @@ class MLPMixer(nn.Module):
                     patch_size=self.patch_size,
                     chw=(self.stem_channels, self.chw[1], self.chw[2]),
                 ),
-                CNNBlock(
-                    self.stem_channels,
-                    self.stem_channels,
-                    drop_n=drop_n,
-                    drop_p=drop_p,
-                ),
+                # CNNBlock(
+                #     self.stem_channels,
+                #     self.stem_channels,
+                #     drop_n=drop_n,
+                #     drop_p=drop_p,
+                # ),
             ) for _ in range(depth)
         ])
         self.skipper = ScaleSkip2D(self.stem_channels, drop_p=drop_p)

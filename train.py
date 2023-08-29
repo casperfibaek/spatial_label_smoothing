@@ -8,20 +8,21 @@ from data_loaders import load_data
 from utils import cosine_scheduler, convert_torch_to_float
 from predict import predict_func
 from model import MLPMixer
-from soft_spatial_labels import SoftSpatialCrossEntropyLoss
+from soft_spatial_labels import SoftSpatialCrossEntropyLoss, OneHotEncoder2D
 from torchmetrics import Accuracy, Precision, Recall
 
 
-NAME = "SOFT_LABEL_LOSS_01"
+NAME = "SOFT_LABEL_LOSS_02"
 AUGMENTATIONS = False
 BATCH_SIZE = 16
 NUM_EPOCHS = 100
 WARMUP_EPOCHS = 10
 MIN_EPOCHS = 25
 PATIENCE = 10
-LEARNING_RATE = 0.001
-LEARNING_RATE_END = 0.00001
+LEARNING_RATE = 0.0001
+LEARNING_RATE_END = 0.000001
 SAVE_BEST_MODEL = True
+CREATE_PREDICTIONS = True
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -29,11 +30,11 @@ model = MLPMixer(
     chw=(10, 64, 64),
     output_dim=11,
     patch_size=4,
-    dim=256,
-    depth=3,
+    dim=512,
+    depth=5,
     channel_scale=2,
     drop_n=0.0,
-    drop_p=0.0,
+    drop_p=0.1,
 )
 
 metric_accuracy = Accuracy(task="multiclass", num_classes=11); metric_accuracy.__name__ = "accuracy"
@@ -45,15 +46,21 @@ metrics = [
     # metric_recall,
 ]
 
+classes = [10, 20, 30, 40, 50, 60, 70, 80, 90, 95, 100]
 criterion = SoftSpatialCrossEntropyLoss(
     method="max",
-    classes=[10, 20, 30, 40, 50, 60, 70, 80, 90, 95, 100],
+    classes=classes,
     strength=1.01,
-    kernel_radius=1.0,
+    kernel_radius=2.0,
     kernel_circular=True,
     kernel_sigma=2.0,
     device=device,
 )
+encoder = torch.nn.Identity()
+
+# If we use the normal cross entropy loss, we need to use the OneHotEncoder2D
+# criterion = torch.nn.CrossEntropyLoss()
+# encoder = OneHotEncoder2D(classes, device=device)
 
 dl_train, dl_val, dl_test = load_data(with_augmentations=False, batch_size=BATCH_SIZE)
 
@@ -111,6 +118,7 @@ for epoch in range(NUM_EPOCHS + WARMUP_EPOCHS):
     for i, (images, labels) in enumerate(train_pbar):
         # Move inputs and targets to the device (GPU)
         images, labels = images.to(device), labels.to(device)
+        labels = encoder(labels)
 
         # Zero the gradients
         optimizer.zero_grad()
@@ -147,6 +155,7 @@ for epoch in range(NUM_EPOCHS + WARMUP_EPOCHS):
                 for j, (images, labels) in enumerate(dl_val):
                     images = images.to(device)
                     labels = labels.to(device)
+                    labels = encoder(labels)
 
                     outputs = model(images)
 
@@ -173,7 +182,7 @@ for epoch in range(NUM_EPOCHS + WARMUP_EPOCHS):
                 best_loss = val_loss
                 best_model_state = model.state_dict().copy()
 
-                if predict_func is not None and epoch >= WARMUP_EPOCHS:
+                if CREATE_PREDICTIONS and predict_func is not None and epoch >= WARMUP_EPOCHS:
                     predict_func(model, epoch_current, name=NAME)
 
             elif best_loss > val_loss:
@@ -181,7 +190,7 @@ for epoch in range(NUM_EPOCHS + WARMUP_EPOCHS):
                 best_loss = val_loss
                 best_model_state = model.state_dict().copy()
 
-                if predict_func is not None and epoch >= WARMUP_EPOCHS:
+                if CREATE_PREDICTIONS and predict_func is not None and epoch >= WARMUP_EPOCHS:
                     predict_func(model, epoch_current, name=NAME)
 
                 epochs_no_improve = 0
@@ -207,6 +216,7 @@ with torch.no_grad():
     for k, (images, labels) in enumerate(dl_test):
         images = images.to(device)
         labels = labels.to(device)
+        labels = encoder(labels)
 
         outputs = model(images)
 

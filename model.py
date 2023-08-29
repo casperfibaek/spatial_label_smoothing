@@ -198,9 +198,7 @@ class MLPMixer(nn.Module):
         channel_scale=2,
         drop_n=0.1,
         drop_p=0.1,
-        clamp_output=False,
-        clamp_min=0.0,
-        clamp_max=1.0,
+        device=None,
     ):
         super(MLPMixer, self).__init__()
         self.chw = chw
@@ -211,10 +209,13 @@ class MLPMixer(nn.Module):
         self.channel_scale = channel_scale
         self.drop_n = drop_n
         self.drop_p = drop_p
-        self.clamp_output = clamp_output
-        self.clamp_min = clamp_min
-        self.clamp_max = clamp_max
-        self.std = .05
+        self.std = .02
+        if device is None:
+            self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        else:
+            self.device = device
+
+        self.eps = torch.Tensor([torch.finfo(torch.float32).eps]).to(self.device)
 
         self.num_patches = (chw[1] // patch_size) * (chw[2] // patch_size)
         self.stem_channels = dim // (patch_size ** 2)
@@ -250,6 +251,7 @@ class MLPMixer(nn.Module):
         self.head = nn.Sequential(
             CNNBlock(self.stem_channels, self.stem_channels // 2, drop_n=drop_n, drop_p=drop_p),
             nn.Conv2d(self.stem_channels // 2, self.output_dim, 1),
+            nn.Softmax2d(),
         )
 
         self.apply(self._init_weights)
@@ -283,9 +285,6 @@ class MLPMixer(nn.Module):
         x = self.forward_trunc(skip)
         x = self.skipper(skip, x)
         x = self.forward_head(x)
-
-        if self.clamp_output:
-            x = torch.clamp(x, self.clamp_min, self.clamp_max)
         
         return x
 

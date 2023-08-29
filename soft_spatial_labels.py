@@ -6,6 +6,27 @@ from typing import Optional
 from kernels import create_kernel, kernel_sobel
 
 
+class OneHotEncoder2D(nn.Module):
+    """
+    One hot encodes a 2D tensor.
+    """
+    def __init__(self, classes: list[int], device: Optional[str] = None) -> None:
+        super().__init__()
+        assert isinstance(classes, list) and len(classes) > 1, "classes must be a list of at least two ints"
+        assert classes == sorted(classes), "classes must be sorted in ascending order"
+
+        if device is None:
+            self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        else:
+            self.device = device
+
+        self.classes_count = len(classes)
+        self.classes = torch.Tensor(classes).view(1, -1, 1, 1).to(self.device)
+
+    def forward(self, input: torch.Tensor) -> torch.Tensor:
+        return (input == self.classes).float()
+
+
 class SobelFilter(nn.Module):
     def __init__(self, radius=2, scale=2):
         super().__init__()
@@ -65,16 +86,21 @@ class SoftSpatialCrossEntropyLoss(torch.nn.CrossEntropyLoss):
         kernel_radius: float = 1.0,
         kernel_circular: bool = True,
         kernel_sigma: float = 2.0,
-        device: str = "cuda",
+        device: Optional[str] = None,
     ) -> None:
         super().__init__(reduction=reduction)
         assert method in ["half", "max", None], "method must be one of 'half', 'max', or None"
         assert isinstance(classes, list) and len(classes) > 1, "classes must be a list of at least two ints"
         assert classes == sorted(classes), "classes must be sorted in ascending order"
 
-        self._eps = torch.Tensor([torch.finfo(torch.float32).eps]).to(device)
+        if device is None:
+            self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        else:
+            self.device = device
+
+        self._eps = torch.Tensor([torch.finfo(torch.float32).eps]).to(self.device)
         self.classes_count = len(classes)
-        self.classes = torch.Tensor(classes).view(1, -1, 1, 1).to(device)
+        self.classes = torch.Tensor(classes).view(1, -1, 1, 1).to(self.device)
         self.strength = strength
         self.method = method
 

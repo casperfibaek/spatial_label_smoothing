@@ -9,10 +9,12 @@ def predict_func(model, epoch, name):
     img_path = "./data/naestved_s2.tif"
     img_arr = beo.raster_to_array(img_path, filled=True, fill_value=0, cast=np.float32) / 10000.0
 
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
     def predict(arr):
         swap = beo.channel_last_to_first(arr)
         as_torch = torch.from_numpy(swap).float()
-        on_device = as_torch.to('cuda')
+        on_device = as_torch.to(device)
         predicted = model(on_device)
         on_cpu = predicted.cpu()
         as_numpy = on_cpu.detach().numpy()

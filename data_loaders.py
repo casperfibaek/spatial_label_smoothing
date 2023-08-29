@@ -38,6 +38,8 @@ def load_data(*,
     """
     Loads the data from the data folder.
     """
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
     x_train = beo.MultiArray([np.load(f, mmap_mode="r") for f in sorted(glob(os.path.join(folder, f"*train_{x}.npy")))])
     y_train = beo.MultiArray([np.load(f, mmap_mode="r") for f in sorted(glob(os.path.join(folder, f"*train_label_{y}.npy")))])
 
@@ -71,9 +73,9 @@ def load_data(*,
     ds_test = beo.Dataset(x_test, y_test, callback=callback)
     ds_val = beo.Dataset(x_val, y_val, callback=callback)
 
-    dl_train = DataLoader(ds_train, batch_size=batch_size, shuffle=True, pin_memory=True, num_workers=num_workers, drop_last=True, generator=torch.Generator(device='cuda'))
-    dl_test = DataLoader(ds_test, batch_size=batch_size, shuffle=False, pin_memory=True, num_workers=num_workers, drop_last=True, generator=torch.Generator(device='cuda'))
-    dl_val = DataLoader(ds_val, batch_size=batch_size, shuffle=False, pin_memory=True, num_workers=num_workers, drop_last=True, generator=torch.Generator(device='cuda'))
+    dl_train = DataLoader(ds_train, batch_size=batch_size, shuffle=True, pin_memory=True, num_workers=num_workers, drop_last=True, generator=torch.Generator(device=device))
+    dl_test = DataLoader(ds_test, batch_size=batch_size, shuffle=False, pin_memory=True, num_workers=num_workers, drop_last=True, generator=torch.Generator(device=device))
+    dl_val = DataLoader(ds_val, batch_size=batch_size, shuffle=False, pin_memory=True, num_workers=num_workers, drop_last=True, generator=torch.Generator(device=device))
 
     return dl_train, dl_test, dl_val
 

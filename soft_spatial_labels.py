@@ -70,34 +70,6 @@ class SobelFilter(nn.Module):
         return magnitude
 
 
-def dice_loss(inputs, targets, eps=1e-7):
-    """Computes the Sørensen–Dice loss.
-
-    Note that PyTorch optimizers minimize a loss. In this
-    case, we would like to maximize the dice loss so we
-    return the negated dice loss.
-
-    Args:
-        true: a tensor of shape [B, 1, H, W].
-        logits: a tensor of shape [B, C, H, W]. Corresponds to
-            the raw output or logits of the model.
-        eps: added to the denominator for numerical stability.
-
-    Returns:
-        dice_loss: the Sørensen–Dice loss.
-    """
-    import pdb; pdb.set_trace()
-
-    batch_size, channels, height, width = inputs.shape
-
-    intersection = torch.sum(inputs * targets, dim=(batch_size, height, width))
-    cardinality = torch.sum(inputs + targets, dims=(batch_size, height, width))
-
-    dice_loss = (2. * intersection / (cardinality + eps)).mean()
-
-    return (1 - dice_loss)
-
-
 class SoftSpatialCrossEntropyLoss(nn.Module):
     """
     This loss allows the targets for the cross entropy loss to be multi-label.
@@ -119,7 +91,7 @@ class SoftSpatialCrossEntropyLoss(nn.Module):
     ) -> None:
         super().__init__()
         assert method in ["half", "max", None], "method must be one of 'half', 'max', or None"
-        assert loss_method in ["cross_entropy", "dice", "logcosh_dice"], "loss_method must be one of 'cross_entropy', 'dice', or 'logcosh_dice'"
+        assert loss_method in ["cross_entropy", "dice", "logcosh_dice", "error", "focal_error"], "loss_method must be one of 'cross_entropy', 'dice', or 'logcosh_dice'"
         assert isinstance(classes, list) and len(classes) > 1, "classes must be a list of at least two ints"
         assert classes == sorted(classes), "classes must be sorted in ascending order"
 
@@ -187,6 +159,10 @@ class SoftSpatialCrossEntropyLoss(nn.Module):
             cardinality = torch.sum(output + target_smooth, dim=(0, 2, 3))
 
             loss = torch.log(torch.cosh(1 - torch.mean((intersection + self.eps) / (cardinality + self.eps))))
+        elif self.loss_method == "error":
+            loss = torch.mean(torch.sum(torch.abs(output - target_smooth), dim=1) / 2.0)
+        elif self.loss_method == "focal_error":
+            loss = torch.mean(torch.abs((adjusted_targets * target_smooth) - (adjusted_targets * output))) * self.classes_count
         else:
             raise ValueError("loss_method must be one of 'cross_entropy' or 'dice'")
 

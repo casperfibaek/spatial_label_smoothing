@@ -35,16 +35,16 @@ model = MLPMixer(
     dim=256,
     depth=3,
     channel_scale=2,
-    drop_n=0.1,
-    drop_p=0.1,
+    drop_n=0.0,
+    drop_p=0.0,
 )
 
 if USE_SOFT_LOSS:
     criterion = SoftSpatialCrossEntropyLoss(
-        method="max",
+        method="half",
         classes=classes,
         strength=1.01,
-        kernel_radius=2.0,
+        kernel_radius=1.0,
         kernel_circular=True,
         kernel_sigma=2.0,
         device=device,
@@ -55,16 +55,20 @@ else:
     criterion = torch.nn.CrossEntropyLoss()
     encoder = OneHotEncoder2D(classes, device=device)
 
-def metric_wrapper(input, target, metric_func, classes, device):
-    batch_size, channels, height, width = input.shape
+def metric_wrapper(output, target, metric_func, classes, device, raw=True):
+    batch_size, channels, height, width = output.shape
     classes = torch.Tensor(classes).view(1, -1, 1, 1).to(device)
 
     target_max = torch.argmax((target == classes).float(), dim=1, keepdim=True).to(device)
+    if raw:
+        _output = output.permute(0, 2, 3, 1).reshape(-1, channels)
+        _target = target_max.permute(0, 2, 3, 1).reshape(-1)
+    else:
+        input_max = torch.argmax(output, dim=1, keepdim=True).to(device)
+        _output = input_max.permute(0, 2, 3, 1).reshape(-1)
+        _target = target_max.permute(0, 2, 3, 1).reshape(-1)
 
-    _input = input.permute(0, 2, 3, 1).reshape(-1, channels)
-    _target = target_max.permute(0, 2, 3, 1).reshape(-1)
-
-    metric = metric_func(_input, _target)
+    metric = metric_func(_output, _target)
 
     return metric
 

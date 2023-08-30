@@ -69,6 +69,35 @@ class SobelFilter(nn.Module):
 
         return magnitude
 
+
+def dice_loss(inputs, targets, eps=1e-7):
+    """Computes the Sørensen–Dice loss.
+
+    Note that PyTorch optimizers minimize a loss. In this
+    case, we would like to maximize the dice loss so we
+    return the negated dice loss.
+
+    Args:
+        true: a tensor of shape [B, 1, H, W].
+        logits: a tensor of shape [B, C, H, W]. Corresponds to
+            the raw output or logits of the model.
+        eps: added to the denominator for numerical stability.
+
+    Returns:
+        dice_loss: the Sørensen–Dice loss.
+    """
+    import pdb; pdb.set_trace()
+
+    batch_size, channels, height, width = inputs.shape
+
+    intersection = torch.sum(inputs * targets, dim=(batch_size, height, width))
+    cardinality = torch.sum(inputs + targets, dims=(batch_size, height, width))
+
+    dice_loss = (2. * intersection / (cardinality + eps)).mean()
+
+    return (1 - dice_loss)
+
+
 class SoftSpatialCrossEntropyLoss(nn.Module):
     """
     This loss allows the targets for the cross entropy loss to be multi-label.
@@ -140,6 +169,12 @@ class SoftSpatialCrossEntropyLoss(nn.Module):
         convolved = convolved[:, :, self.padding:-self.padding, self.padding:-self.padding]
         target_smooth = convolved / (self._eps + convolved.sum(dim=(1), keepdim=True))
 
-        kldiv = F.kl_div(input.log_softmax(dim=1), target_smooth.log_softmax(dim=1), reduction="batchmean", log_target=True)
+        dice = dice_loss(target_smooth, input)
 
-        return kldiv
+        return dice
+
+        # kldiv = F.kl_div(input.log_softmax(dim=1), target_smooth.log_softmax(dim=1), reduction="batchmean", log_target=True)
+
+        # return kldiv
+
+

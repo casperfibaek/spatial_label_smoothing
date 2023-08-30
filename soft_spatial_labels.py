@@ -177,9 +177,3 @@ class SoftSpatialCrossEntropyLoss(nn.Module):
         dice_loss = 1 - (2. * intersection / (cardinality + self.eps)).mean()
 
         return dice_loss
-
-        # kldiv = F.kl_div(input.log_softmax(dim=1), target_smooth.log_softmax(dim=1), reduction="batchmean", log_target=True)
-
-        # return kldiv
-
-

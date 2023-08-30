@@ -1,12 +1,14 @@
+from torchmetrics.classification import MulticlassF1Score, MulticlassPrecision, MulticlassRecall, MulticlassJaccardIndex
 from torch.cuda.amp import GradScaler, autocast
 from tqdm import tqdm
 import argparse
 import torch
 import os
 
+
+
 from soft_spatial_labels import SoftSpatialCrossEntropyLoss, OneHotEncoder2D
 from utils import cosine_scheduler, convert_torch_to_float
-from torchmetrics import Accuracy, Precision, Recall
 from data_loaders import load_data
 from predict import predict_func
 from model import MLPMixer
@@ -21,8 +23,8 @@ if __name__ == "__main__":
     parser.add_argument('--warmup_epochs',          type=int,   default=10)
     parser.add_argument('--min_epochs',             type=int,   default=25)
     parser.add_argument('--patience',               type=int,   default=10)
-    parser.add_argument('--learning_rate',          type=float, default=0.0001)
-    parser.add_argument('--learning_rate_end',      type=float, default=0.000001)
+    parser.add_argument('--learning_rate',          type=float, default=0.001)
+    parser.add_argument('--learning_rate_end',      type=float, default=0.00001)
     parser.add_argument('--save_best_model',        type=bool,  default=True)
     parser.add_argument('--create_predictions',     type=bool,  default=True)
     parser.add_argument('--classes',                type=list,  default=[10, 20, 30, 40, 50, 60, 70, 80, 90, 95, 100])
@@ -53,7 +55,12 @@ if __name__ == "__main__":
     LOSS_KERNEL_CIRCULAR    = bool(args.loss_kernel_circular)
     LOSS_KERNEL_SIGMA       = float(args.loss_kernel_sigma)
 
-    NAME = f"aug{AUGMENTATION}-bs{BATCH_SIZE}-e{NUM_EPOCHS}-we{WARMUP_EPOCHS}-me{MIN_EPOCHS}-p{PATIENCE}-lr{LEARNING_RATE}-lre{LEARNING_RATE_END}-lm{LOSS_METHOD}-ls{LOSS_STRENGHT}-lkr{LOSS_KERNEL_RADIUS}-lkc{LOSS_KERNEL_CIRCULAR}-lks{LOSS_KERNEL_SIGMA}"
+    NAME = f"model-lm{LOSS_METHOD}-ls{LOSS_STRENGHT}-lkr{LOSS_KERNEL_RADIUS}-lkc{LOSS_KERNEL_CIRCULAR}-lks{LOSS_KERNEL_SIGMA}"
+
+
+    os.makedirs('./models', exist_ok=True)
+    os.makedirs('./predictions', exist_ok=True)
+
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
@@ -64,20 +71,35 @@ if __name__ == "__main__":
         chw=(10, 64, 64),
         output_dim=11,
         patch_size=4,
-        dim=512,
-        depth=5,
+        dim=256,
+        depth=3,
         channel_scale=2,
         drop_n=0.0,
-        drop_p=0.1,
+        drop_p=0.0,
     )
 
-    metric_accuracy  = Accuracy(task="multiclass", num_classes=11); metric_accuracy.__name__ = "accuracy"
-    metric_precision = Precision(task="multiclass", num_classes=11, average="macro"); metric_precision.__name__ = "precision"
-    metric_recall    = Recall(task="multiclass", num_classes=11, average="macro"); metric_recall.__name__ = "recall"
+    class MetricWrapper(torch.nn.Module):
+        def __init__(self, metric, name, device):
+            super().__init__()
+            self.metric = metric.to(device)
+            self.__name__ = name
+            self.device = device
+
+        def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+            argmax_input = torch.argmax(input, dim=1, keepdim=True).to(self.device)
+            argmax_target = torch.argmax(target, dim=1, keepdim=True).to(self.device)
+
+            return self.metric(argmax_input, argmax_target)
+
+    metric_f1 = MetricWrapper(MulticlassF1Score(num_classes=11, top_k=1), "F1", device)
+    metric_precision = MetricWrapper(MulticlassPrecision(num_classes=11, top_k=1), "Prec", device)
+    metric_recall = MetricWrapper(MulticlassRecall(num_classes=11, top_k=1), "Rec", device)
+    metric_jaccard = MetricWrapper(MulticlassJaccardIndex(num_classes=11), "Jacc", device)
     metrics = [
-    #    metric_accuracy,
-    #    metric_precision,
-    #    metric_recall,
+        metric_f1,
+        metric_precision,
+        metric_recall,
+        metric_jaccard,
     ]
 
     criterion = SoftSpatialCrossEntropyLoss(

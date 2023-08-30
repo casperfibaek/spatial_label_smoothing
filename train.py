@@ -9,20 +9,20 @@ from utils import cosine_scheduler, convert_torch_to_float
 from predict import predict_func
 from model import MLPMixer
 from soft_spatial_labels import SoftSpatialCrossEntropyLoss, OneHotEncoder2D
-from torchmetrics import Accuracy, Precision, Recall
+from torchmetrics.classification import MulticlassF1Score, MulticlassPrecision, MulticlassRecall, MulticlassJaccardIndex
 
 
-NAME = "SOFT_LABEL_LOSS_02"
-AUGMENTATIONS = False
+NAME = "NORMAL_LABEL_LOSS_01"
 BATCH_SIZE = 16
 NUM_EPOCHS = 100
 WARMUP_EPOCHS = 10
 MIN_EPOCHS = 25
 PATIENCE = 10
-LEARNING_RATE = 0.0001
-LEARNING_RATE_END = 0.000001
+LEARNING_RATE = 0.001
+LEARNING_RATE_END = 0.00001
 SAVE_BEST_MODEL = True
-CREATE_PREDICTIONS = True
+AUGMENTATIONS = False
+CREATE_PREDICTIONS = False
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -30,39 +30,55 @@ model = MLPMixer(
     chw=(10, 64, 64),
     output_dim=11,
     patch_size=4,
-    dim=512,
-    depth=5,
+    dim=256,
+    depth=3,
     channel_scale=2,
     drop_n=0.0,
-    drop_p=0.1,
+    drop_p=0.0,
 )
 
-metric_accuracy = Accuracy(task="multiclass", num_classes=11); metric_accuracy.__name__ = "accuracy"
-metric_precision = Precision(task="multiclass", num_classes=11, average="macro"); metric_precision.__name__ = "precision"
-metric_recall = Recall(task="multiclass", num_classes=11, average="macro"); metric_recall.__name__ = "recall"
+class MetricWrapper(torch.nn.Module):
+    def __init__(self, metric, name, device):
+        super().__init__()
+        self.metric = metric.to(device)
+        self.__name__ = name
+        self.device = device
+
+    def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        argmax_input = torch.argmax(input, dim=1, keepdim=True).to(self.device)
+        argmax_target = torch.argmax(target, dim=1, keepdim=True).to(self.device)
+
+        return self.metric(argmax_input, argmax_target)
+
+metric_f1 = MetricWrapper(MulticlassF1Score(num_classes=11, top_k=1), "F1", device)
+metric_precision = MetricWrapper(MulticlassPrecision(num_classes=11, top_k=1), "Prec", device)
+metric_recall = MetricWrapper(MulticlassRecall(num_classes=11, top_k=1), "Rec", device)
+metric_jaccard = MetricWrapper(MulticlassJaccardIndex(num_classes=11), "Jacc", device)
+
 metrics = [
-    # metric_accuracy,
-    # metric_precision,
-    # metric_recall,
+    metric_f1,
+    metric_precision,
+    metric_recall,
+    metric_jaccard,
 ]
 
 classes = [10, 20, 30, 40, 50, 60, 70, 80, 90, 95, 100]
-criterion = SoftSpatialCrossEntropyLoss(
-    method="max",
-    classes=classes,
-    strength=1.01,
-    kernel_radius=2.0,
-    kernel_circular=True,
-    kernel_sigma=2.0,
-    device=device,
-)
-encoder = torch.nn.Identity()
+# criterion = SoftSpatialCrossEntropyLoss(
+#     method="max",
+#     classes=classes,
+#     strength=1.01,
+#     kernel_radius=2.0,
+#     kernel_circular=True,
+#     kernel_sigma=2.0,
+#     device=device,
+# )
+# encoder = torch.nn.Identity()
 
 # If we use the normal cross entropy loss, we need to use the OneHotEncoder2D
-# criterion = torch.nn.CrossEntropyLoss()
-# encoder = OneHotEncoder2D(classes, device=device)
+criterion = torch.nn.CrossEntropyLoss()
+encoder = OneHotEncoder2D(classes, device=device)
 
-dl_train, dl_val, dl_test = load_data(with_augmentations=False, batch_size=BATCH_SIZE)
+dl_train, dl_val, dl_test = load_data(with_augmentations=True, batch_size=BATCH_SIZE)
 
 torch.set_default_device(device)
 

@@ -69,7 +69,6 @@ class SobelFilter(nn.Module):
 
         return magnitude
 
-
 class SoftSpatialCrossEntropyLoss(torch.nn.CrossEntropyLoss):
     """
     This loss allows the targets for the cross entropy loss to be multi-label.
@@ -119,6 +118,8 @@ class SoftSpatialCrossEntropyLoss(torch.nn.CrossEntropyLoss):
         self.padding = (self.kernel_np.shape[0] - 1) // 2
         self.kernel = torch.Tensor(self.kernel_np).unsqueeze(0).repeat(self.classes_count, 1, 1, 1).to(device)
 
+        # self.idx = 0
+
     def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         adjusted_targets = (target == self.classes).float()
         adjusted_targets = F.pad(adjusted_targets, pad=(self.padding, self.padding, self.padding, self.padding), mode="replicate")
@@ -138,5 +139,9 @@ class SoftSpatialCrossEntropyLoss(torch.nn.CrossEntropyLoss):
 
         convolved = convolved[:, :, self.padding:-self.padding, self.padding:-self.padding]
         normalised = convolved / (self._eps + convolved.sum(dim=(1), keepdim=True))
+
+        # self.idx += 1
+        # if self.idx > 100:
+        #     import pdb; pdb.set_trace()
 
         return super().forward(input, normalised)

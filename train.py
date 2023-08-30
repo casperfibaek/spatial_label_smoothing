@@ -3,13 +3,13 @@ import torch
 from torch.cuda.amp import GradScaler, autocast
 from tqdm import tqdm
 
-
 from data_loaders import load_data
 from utils import cosine_scheduler, convert_torch_to_float
 from predict import predict_func
 from model import MLPMixer
 from soft_spatial_labels import SoftSpatialCrossEntropyLoss, OneHotEncoder2D
-from torchmetrics.classification import MulticlassF1Score, MulticlassPrecision, MulticlassRecall, MulticlassJaccardIndex
+from torchmetrics.classification import MulticlassF1Score, MulticlassPrecision, MulticlassRecall
+from functools import partial
 
 
 NAME = "NORMAL_LABEL_LOSS_01"
@@ -23,12 +23,14 @@ LEARNING_RATE_END = 0.00001
 SAVE_BEST_MODEL = True
 AUGMENTATIONS = False
 CREATE_PREDICTIONS = False
+USE_SOFT_LOSS = True
 
+classes = [10, 30, 40, 50, 60, 80, 90]
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 model = MLPMixer(
     chw=(10, 64, 64),
-    output_dim=11,
+    output_dim=len(classes),
     patch_size=4,
     dim=256,
     depth=3,
@@ -37,46 +39,45 @@ model = MLPMixer(
     drop_p=0.0,
 )
 
-class MetricWrapper(torch.nn.Module):
-    def __init__(self, metric, name, device):
-        super().__init__()
-        self.metric = metric.to(device)
-        self.__name__ = name
-        self.device = device
+if USE_SOFT_LOSS:
+    criterion = SoftSpatialCrossEntropyLoss(
+        method="max",
+        classes=classes,
+        strength=1.01,
+        kernel_radius=2.0,
+        kernel_circular=True,
+        kernel_sigma=2.0,
+        device=device,
+    )
+    encoder = torch.nn.Identity()
+else:
+    # If we use the normal cross entropy loss, we need to use the OneHotEncoder2D
+    criterion = torch.nn.CrossEntropyLoss()
+    encoder = OneHotEncoder2D(classes, device=device)
 
-    def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-        argmax_input = torch.argmax(input, dim=1, keepdim=True).to(self.device)
-        argmax_target = torch.argmax(target, dim=1, keepdim=True).to(self.device)
+def metric_wrapper(input, target, metric_func, classes, device):
+    batch_size, channels, height, width = input.shape
+    classes = torch.Tensor(classes).view(1, -1, 1, 1).to(device)
 
-        return self.metric(argmax_input, argmax_target)
+    target_max = torch.argmax((target == classes).float(), dim=1, keepdim=True).to(device)
 
-metric_f1 = MetricWrapper(MulticlassF1Score(num_classes=11, top_k=1), "F1", device)
-metric_precision = MetricWrapper(MulticlassPrecision(num_classes=11, top_k=1), "Prec", device)
-metric_recall = MetricWrapper(MulticlassRecall(num_classes=11, top_k=1), "Rec", device)
-metric_jaccard = MetricWrapper(MulticlassJaccardIndex(num_classes=11), "Jacc", device)
+    _input = input.permute(0, 2, 3, 1).reshape(-1, channels)
+    _target = target_max.permute(0, 2, 3, 1).reshape(-1)
 
-metrics = [
-    metric_f1,
-    metric_precision,
-    metric_recall,
-    metric_jaccard,
-]
+    metric = metric_func(_input, _target)
 
-classes = [10, 20, 30, 40, 50, 60, 70, 80, 90, 95, 100]
-# criterion = SoftSpatialCrossEntropyLoss(
-#     method="max",
-#     classes=classes,
-#     strength=1.01,
-#     kernel_radius=2.0,
-#     kernel_circular=True,
-#     kernel_sigma=2.0,
-#     device=device,
-# )
-# encoder = torch.nn.Identity()
+    return metric
 
-# If we use the normal cross entropy loss, we need to use the OneHotEncoder2D
-criterion = torch.nn.CrossEntropyLoss()
-encoder = OneHotEncoder2D(classes, device=device)
+
+metric_f1 = partial(metric_wrapper, metric_func=partial(MulticlassF1Score(num_classes=len(classes), average="macro").to(device)), classes=classes, device=device)
+metric_precision = partial(metric_wrapper, metric_func=partial(MulticlassPrecision(num_classes=len(classes), average="macro").to(device)), classes=classes, device=device)
+metric_recall = partial(metric_wrapper, metric_func=partial(MulticlassRecall(num_classes=len(classes), average="macro").to(device)), classes=classes, device=device)
+
+_metrics = {
+    "f1": metric_f1,
+    "prec": metric_precision,
+    "rec": metric_recall,
+}
 
 dl_train, dl_val, dl_test = load_data(with_augmentations=True, batch_size=BATCH_SIZE)
 
@@ -123,7 +124,7 @@ for epoch in range(NUM_EPOCHS + WARMUP_EPOCHS):
 
     # Initialize the running loss
     train_loss = 0.0
-    train_metrics_values = { metric.__name__: 0.0 for metric in metrics }
+    train_metrics_values = { name : 0.0 for name in _metrics }
 
     # Initialize the progress bar for training
     epoch_current = epoch + 1 if epoch < WARMUP_EPOCHS else epoch + 1 - WARMUP_EPOCHS
@@ -150,8 +151,10 @@ for epoch in range(NUM_EPOCHS + WARMUP_EPOCHS):
 
         train_loss += loss.item()
 
-        for metric in metrics:
-            train_metrics_values[metric.__name__] += metric(outputs, labels)
+        for metric_name in _metrics:
+            metric = _metrics[metric_name]
+            metric_value = metric(outputs, labels)
+            train_metrics_values[metric_name] += metric_value
 
         train_pbar.set_postfix({
             "loss": f"{train_loss / (i + 1):.4f}",
@@ -162,7 +165,7 @@ for epoch in range(NUM_EPOCHS + WARMUP_EPOCHS):
         # This is done in the same scope to keep tqdm happy.
         if i == len(dl_train) - 1:
 
-            val_metrics_values = { metric.__name__: 0.0 for metric in metrics }
+            val_metrics_values = { name : 0.0 for name in _metrics }
             # Validate every epoch
             with torch.no_grad():
                 model.eval()
@@ -178,8 +181,10 @@ for epoch in range(NUM_EPOCHS + WARMUP_EPOCHS):
                     loss = criterion(outputs, labels)
                     val_loss += loss.item()
 
-                    for metric in metrics:
-                        val_metrics_values[metric.__name__] += metric(outputs, labels)
+                    for metric_name in _metrics:
+                        metric = _metrics[metric_name]
+                        metric_value = metric(outputs, labels)
+                        val_metrics_values[metric_name] += metric_value
 
             # Append val_loss to the train_pbar
             loss_dict = {
@@ -229,7 +234,10 @@ model.eval()
 # Test the model
 with torch.no_grad():
     test_loss = 0
-    for k, (images, labels) in enumerate(dl_test):
+    test_metrics_values = { name : 0.0 for name in _metrics }
+
+    test_pbar = tqdm(dl_test, total=len(dl_test), desc=f"Testing.. Best epoch: {best_epoch}")
+    for k, (images, labels) in enumerate(test_pbar):
         images = images.to(device)
         labels = labels.to(device)
         labels = encoder(labels)
@@ -239,7 +247,17 @@ with torch.no_grad():
         loss = criterion(outputs, labels)
         test_loss += loss.item()
 
-    print(f"Test Accuracy: {test_loss / (k + 1):.4f}")
+        for metric_name in _metrics:
+            metric = _metrics[metric_name]
+            metric_value = metric(outputs, labels)
+            test_metrics_values[metric_name] += metric_value
+
+        test_pbar.set_postfix({
+            "test_loss": f"{test_loss / (k + 1):.4f}",
+            **{name: f"{value / (k + 1):.4f}" for name, value in test_metrics_values.items()}
+        })    
+
+    print(f"Test Loss: {test_loss / (k + 1):.4f}")
 
 # Save the model
 if SAVE_BEST_MODEL:

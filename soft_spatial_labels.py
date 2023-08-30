@@ -69,7 +69,7 @@ class SobelFilter(nn.Module):
 
         return magnitude
 
-class SoftSpatialCrossEntropyLoss(torch.nn.CrossEntropyLoss):
+class SoftSpatialCrossEntropyLoss(nn.Module):
     """
     This loss allows the targets for the cross entropy loss to be multi-label.
     The labels are smoothed by a spatial gaussian kernel before being normalized.
@@ -87,7 +87,7 @@ class SoftSpatialCrossEntropyLoss(torch.nn.CrossEntropyLoss):
         kernel_sigma: float = 2.0,
         device: Optional[str] = None,
     ) -> None:
-        super().__init__(reduction=reduction)
+        super().__init__()
         assert method in ["half", "max", None], "method must be one of 'half', 'max', or None"
         assert isinstance(classes, list) and len(classes) > 1, "classes must be a list of at least two ints"
         assert classes == sorted(classes), "classes must be sorted in ascending order"
@@ -97,6 +97,7 @@ class SoftSpatialCrossEntropyLoss(torch.nn.CrossEntropyLoss):
         else:
             self.device = device
 
+        self.reduction = reduction
         self._eps = torch.Tensor([torch.finfo(torch.float32).eps]).to(self.device)
         self.classes_count = len(classes)
         self.classes = torch.Tensor(classes).view(1, -1, 1, 1).to(self.device)
@@ -118,13 +119,12 @@ class SoftSpatialCrossEntropyLoss(torch.nn.CrossEntropyLoss):
         self.padding = (self.kernel_np.shape[0] - 1) // 2
         self.kernel = torch.Tensor(self.kernel_np).unsqueeze(0).repeat(self.classes_count, 1, 1, 1).to(device)
 
-        # self.idx = 0
 
     def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         adjusted_targets = (target == self.classes).float()
-        adjusted_targets = F.pad(adjusted_targets, pad=(self.padding, self.padding, self.padding, self.padding), mode="replicate")
+        adjusted_targets_pad = F.pad(adjusted_targets, pad=(self.padding, self.padding, self.padding, self.padding), mode="replicate")
         convolved = F.conv2d(
-            adjusted_targets,
+            adjusted_targets_pad,
             weight=self.kernel,
             bias=None,
             padding=self.padding,
@@ -133,15 +133,13 @@ class SoftSpatialCrossEntropyLoss(torch.nn.CrossEntropyLoss):
 
         if self.method == "max":
             maxpool = F.max_pool2d(convolved, kernel_size=self.kernel.shape[-1], stride=1, padding=self.padding)
-            surroundings = (1 - adjusted_targets) * convolved
-            center = ((maxpool * adjusted_targets) * self.strength)
+            surroundings = (1 - adjusted_targets_pad) * convolved
+            center = ((maxpool * adjusted_targets_pad) * self.strength)
             convolved = center + surroundings
 
         convolved = convolved[:, :, self.padding:-self.padding, self.padding:-self.padding]
-        normalised = convolved / (self._eps + convolved.sum(dim=(1), keepdim=True))
+        target_smooth = convolved / (self._eps + convolved.sum(dim=(1), keepdim=True))
 
-        # self.idx += 1
-        # if self.idx > 100:
-        #     import pdb; pdb.set_trace()
+        kldiv = F.kl_div(input.log_softmax(dim=1), target_smooth.log_softmax(dim=1), reduction="batchmean", log_target=True)
 
-        return super().forward(input, normalised)
+        return kldiv

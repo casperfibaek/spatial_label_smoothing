@@ -164,3 +164,5 @@ cython_debug/
 /data/*.xml
 /predictions/*.tif
 /predictions/*.xml
+/models/*.pt
+/models/*.pth

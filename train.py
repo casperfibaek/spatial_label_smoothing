@@ -8,7 +8,7 @@ from utils import cosine_scheduler, convert_torch_to_float
 from predict import predict_func
 from model import MLPMixer
 from soft_spatial_labels import SoftSpatialCrossEntropyLoss, OneHotEncoder2D
-from torchmetrics.classification import MulticlassF1Score, MulticlassPrecision, MulticlassRecall
+from torchmetrics.classification import MulticlassF1Score, MulticlassPrecision, MulticlassRecall, MulticlassJaccardIndex
 from functools import partial
 
 
@@ -35,8 +35,8 @@ model = MLPMixer(
     dim=256,
     depth=3,
     channel_scale=2,
-    drop_n=0.0,
-    drop_p=0.0,
+    drop_n=0.1,
+    drop_p=0.1,
 )
 
 if USE_SOFT_LOSS:
@@ -69,11 +69,13 @@ def metric_wrapper(input, target, metric_func, classes, device):
     return metric
 
 
-metric_f1 = partial(metric_wrapper, metric_func=partial(MulticlassF1Score(num_classes=len(classes), average="macro").to(device)), classes=classes, device=device)
-metric_precision = partial(metric_wrapper, metric_func=partial(MulticlassPrecision(num_classes=len(classes), average="macro").to(device)), classes=classes, device=device)
-metric_recall = partial(metric_wrapper, metric_func=partial(MulticlassRecall(num_classes=len(classes), average="macro").to(device)), classes=classes, device=device)
+metric_jac = partial(metric_wrapper, metric_func=partial(MulticlassJaccardIndex(num_classes=len(classes), average="weighted").to(device)), classes=classes, device=device)
+metric_f1 = partial(metric_wrapper, metric_func=partial(MulticlassF1Score(num_classes=len(classes), average="weighted").to(device)), classes=classes, device=device)
+metric_precision = partial(metric_wrapper, metric_func=partial(MulticlassPrecision(num_classes=len(classes), average="weighted").to(device)), classes=classes, device=device)
+metric_recall = partial(metric_wrapper, metric_func=partial(MulticlassRecall(num_classes=len(classes), average="weighted").to(device)), classes=classes, device=device)
 
 _metrics = {
+    "jac": metric_jac,
     "f1": metric_f1,
     "prec": metric_precision,
     "rec": metric_recall,

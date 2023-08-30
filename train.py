@@ -12,16 +12,12 @@ from predict import predict_func
 from model import MLPMixer
 
 
-
-
-
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Train Model')
     # Model's arguments
     parser.add_argument('--augmentation',           type=bool,  default=False)
     parser.add_argument('--batch_size',             type=int,   default=16)
-    parser.add_argument('--num_epochs',             type=int,   default=3)
+    parser.add_argument('--num_epochs',             type=int,   default=100)
     parser.add_argument('--warmup_epochs',          type=int,   default=10)
     parser.add_argument('--min_epochs',             type=int,   default=25)
     parser.add_argument('--patience',               type=int,   default=10)
@@ -79,9 +75,9 @@ if __name__ == "__main__":
     metric_precision = Precision(task="multiclass", num_classes=11, average="macro"); metric_precision.__name__ = "precision"
     metric_recall    = Recall(task="multiclass", num_classes=11, average="macro"); metric_recall.__name__ = "recall"
     metrics = [
-        metric_accuracy,
-        metric_precision,
-        metric_recall,
+    #    metric_accuracy,
+    #    metric_precision,
+    #    metric_recall,
     ]
 
     criterion = SoftSpatialCrossEntropyLoss(

@@ -172,9 +172,9 @@ class SoftSpatialCrossEntropyLoss(nn.Module):
         target_smooth = convolved / (self._eps + convolved.sum(dim=(1), keepdim=True))
 
         intersection = torch.sum(input * target_smooth, dim=(0, 2, 3))
-        cardinality = torch.sum(input + target_smooth, dims=(0, 2, 3))
+        cardinality = torch.sum(input + target_smooth, dim=(0, 2, 3))
 
-        dice_loss = (2. * intersection / (cardinality + self.eps)).mean()
+        dice_loss = 1 - (2. * intersection / (cardinality + self.eps)).mean()
 
         return dice_loss
 

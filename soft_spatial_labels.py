@@ -147,9 +147,11 @@ class SoftSpatialCrossEntropyLoss(nn.Module):
 
         self.padding = (self.kernel_np.shape[0] - 1) // 2
         self.kernel = torch.Tensor(self.kernel_np).unsqueeze(0).repeat(self.classes_count, 1, 1, 1).to(device)
+        self.eps = torch.Tensor([1e-06]).to(self.device)
 
 
     def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        """ Expects input to be of shape [B, C, H, W] and target to be of shape [B, 1, H, W]. """
         adjusted_targets = (target == self.classes).float()
         adjusted_targets_pad = F.pad(adjusted_targets, pad=(self.padding, self.padding, self.padding, self.padding), mode="replicate")
         convolved = F.conv2d(
@@ -169,9 +171,12 @@ class SoftSpatialCrossEntropyLoss(nn.Module):
         convolved = convolved[:, :, self.padding:-self.padding, self.padding:-self.padding]
         target_smooth = convolved / (self._eps + convolved.sum(dim=(1), keepdim=True))
 
-        dice = dice_loss(target_smooth, input)
+        intersection = torch.sum(input * target_smooth, dim=(0, 2, 3))
+        cardinality = torch.sum(input + target_smooth, dims=(0, 2, 3))
 
-        return dice
+        dice_loss = (2. * intersection / (cardinality + self.eps)).mean()
+
+        return dice_loss
 
         # kldiv = F.kl_div(input.log_softmax(dim=1), target_smooth.log_softmax(dim=1), reduction="batchmean", log_target=True)
 

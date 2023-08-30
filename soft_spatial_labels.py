@@ -109,6 +109,7 @@ class SoftSpatialCrossEntropyLoss(nn.Module):
         self,
         reduction: str = "mean",
         method: Optional[str] = "max",
+        loss_method: str = "logcosh_dice",
         classes: list[int] = [0, 1, 2, 3],
         strength: float = 1.01,
         kernel_radius: float = 1.0,
@@ -118,6 +119,7 @@ class SoftSpatialCrossEntropyLoss(nn.Module):
     ) -> None:
         super().__init__()
         assert method in ["half", "max", None], "method must be one of 'half', 'max', or None"
+        assert loss_method in ["cross_entropy", "dice", "logcosh_dice"], "loss_method must be one of 'cross_entropy', 'dice', or 'logcosh_dice'"
         assert isinstance(classes, list) and len(classes) > 1, "classes must be a list of at least two ints"
         assert classes == sorted(classes), "classes must be sorted in ascending order"
 
@@ -132,6 +134,7 @@ class SoftSpatialCrossEntropyLoss(nn.Module):
         self.classes = torch.Tensor(classes).view(1, -1, 1, 1).to(self.device)
         self.strength = strength
         self.method = method
+        self.loss_method = loss_method
 
         self.kernel_np = create_kernel(
             radius=kernel_radius,
@@ -150,7 +153,7 @@ class SoftSpatialCrossEntropyLoss(nn.Module):
         self.eps = torch.Tensor([1e-06]).to(self.device)
 
 
-    def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    def forward(self, output: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         """ Expects input to be of shape [B, C, H, W] and target to be of shape [B, 1, H, W]. """
         adjusted_targets = (target == self.classes).float()
         adjusted_targets_pad = F.pad(adjusted_targets, pad=(self.padding, self.padding, self.padding, self.padding), mode="replicate")
@@ -171,9 +174,22 @@ class SoftSpatialCrossEntropyLoss(nn.Module):
         convolved = convolved[:, :, self.padding:-self.padding, self.padding:-self.padding]
         target_smooth = convolved / (self._eps + convolved.sum(dim=(1), keepdim=True))
 
-        intersection = torch.sum(input * target_smooth, dim=(0, 2, 3))
-        cardinality = torch.sum(input + target_smooth, dim=(0, 2, 3))
+        # Compute the cross entropy
+        if self.loss_method == "cross_entropy":
+            loss = -torch.sum(target_smooth * torch.log(output)) / torch.numel(output)
+        elif self.loss_method == "dice":
+            intersection = torch.sum(output * target_smooth, dim=(0, 2, 3))
+            cardinality = torch.sum(output + target_smooth, dim=(0, 2, 3))
 
-        dice_loss = 1 - (2. * intersection / (cardinality + self.eps)).mean()
+            loss = 1 - (2. * intersection / (cardinality + self.eps)).mean()
+        elif self.loss_method == "logcosh_dice":
+            intersection = torch.sum(output * target_smooth, dim=(0, 2, 3))
+            cardinality = torch.sum(output + target_smooth, dim=(0, 2, 3))
 
-        return dice_loss
+            loss = torch.log(torch.cosh(1 - torch.mean((intersection + self.eps) / (cardinality + self.eps))))
+        else:
+            raise ValueError("loss_method must be one of 'cross_entropy' or 'dice'")
+
+        return loss
+
+ 

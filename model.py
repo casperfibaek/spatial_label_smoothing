@@ -209,7 +209,7 @@ class MLPMixer(nn.Module):
         self.channel_scale = channel_scale
         self.drop_n = drop_n
         self.drop_p = drop_p
-        self.std = .02
+        self.std = .05
         if device is None:
             self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         else:
@@ -238,12 +238,12 @@ class MLPMixer(nn.Module):
                     patch_size=self.patch_size,
                     chw=(self.stem_channels, self.chw[1], self.chw[2]),
                 ),
-                # CNNBlock(
-                #     self.stem_channels,
-                #     self.stem_channels,
-                #     drop_n=drop_n,
-                #     drop_p=drop_p,
-                # ),
+                CNNBlock(
+                    self.stem_channels,
+                    self.stem_channels,
+                    drop_n=drop_n,
+                    drop_p=drop_p,
+                ),
             ) for _ in range(depth)
         ])
         self.skipper = ScaleSkip2D(self.stem_channels, drop_p=drop_p)
@@ -251,7 +251,7 @@ class MLPMixer(nn.Module):
         self.head = nn.Sequential(
             CNNBlock(self.stem_channels, self.stem_channels // 2, drop_n=drop_n, drop_p=drop_p),
             nn.Conv2d(self.stem_channels // 2, self.output_dim, 1),
-            nn.Softmax2d(),
+            nn.Softmax(dim=1),
         )
 
         self.apply(self._init_weights)

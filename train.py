@@ -1,6 +1,5 @@
 import os
 import torch
-from torch.cuda.amp import GradScaler, autocast
 from tqdm import tqdm
 
 from data_loaders import load_data
@@ -12,7 +11,7 @@ from torchmetrics.classification import MulticlassF1Score, MulticlassPrecision, 
 from functools import partial
 
 
-NAME = "NORMAL_LABEL_LOSS_01"
+NAME = "SOFT_LABEL_LOSS_MIXER_02"
 BATCH_SIZE = 16
 NUM_EPOCHS = 100
 WARMUP_EPOCHS = 10
@@ -21,9 +20,9 @@ PATIENCE = 10
 LEARNING_RATE = 0.001
 LEARNING_RATE_END = 0.00001
 SAVE_BEST_MODEL = True
-AUGMENTATIONS = False
-CREATE_PREDICTIONS = False
-USE_SOFT_LOSS = True
+AUGMENTATIONS = True
+CREATE_PREDICTIONS = True
+USE_SOFT_LOSS = False
 
 classes = [10, 30, 40, 50, 60, 80, 90]
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -32,46 +31,53 @@ model = MLPMixer(
     chw=(10, 64, 64),
     output_dim=len(classes),
     patch_size=4,
-    dim=256,
-    depth=3,
+    dim=512,
+    depth=5,
     channel_scale=2,
-    drop_n=0.0,
-    drop_p=0.0,
+    drop_n=0.1,
+    drop_p=0.1,
 )
 
 if USE_SOFT_LOSS:
     criterion = SoftSpatialCrossEntropyLoss(
-        method="half",
+        method="max",
+        loss_method="focal_error_squared",
         classes=classes,
-        strength=1.01,
-        kernel_radius=1.0,
+        kernel_radius=2.0,
         kernel_circular=True,
         kernel_sigma=2.0,
         device=device,
     )
-    encoder = torch.nn.Identity()
 else:
-    # If we use the normal cross entropy loss, we need to use the OneHotEncoder2D
-    criterion = torch.nn.CrossEntropyLoss()
-    encoder = OneHotEncoder2D(classes, device=device)
+    class EntropyLossWrapper(torch.nn.Module):
+        def __init__(self, criterion, classes, device):
+            super().__init__()
+            self.criterion = criterion
+            self.onehot = OneHotEncoder2D(classes=classes, device=device)
+
+        def forward(self, output, target):
+            return self.criterion(output, self.onehot(target))
+        
+    criterion = EntropyLossWrapper(torch.nn.CrossEntropyLoss(), classes, device)
 
 def metric_wrapper(output, target, metric_func, classes, device, raw=True):
     batch_size, channels, height, width = output.shape
     classes = torch.Tensor(classes).view(1, -1, 1, 1).to(device)
 
-    target_max = torch.argmax((target == classes).float(), dim=1, keepdim=True).to(device)
+    target_hot = (target == classes).float().to(device)
+    target_max = torch.argmax(target_hot, dim=1, keepdim=True).to(device)
+
     if raw:
         _output = output.permute(0, 2, 3, 1).reshape(-1, channels)
         _target = target_max.permute(0, 2, 3, 1).reshape(-1)
     else:
-        input_max = torch.argmax(output, dim=1, keepdim=True).to(device)
-        _output = input_max.permute(0, 2, 3, 1).reshape(-1)
+        output_max = torch.argmax(output, dim=1, keepdim=True).to(device)
+        _output = output_max.permute(0, 2, 3, 1).reshape(-1)
         _target = target_max.permute(0, 2, 3, 1).reshape(-1)
 
     metric = metric_func(_output, _target)
 
     return metric
-
 
 metric_jac = partial(metric_wrapper, metric_func=partial(MulticlassJaccardIndex(num_classes=len(classes), average="macro").to(device)), classes=classes, device=device)
 metric_f1 = partial(metric_wrapper, metric_func=partial(MulticlassF1Score(num_classes=len(classes), average="macro").to(device)), classes=classes, device=device)
@@ -107,7 +113,6 @@ lr_schedule_values = cosine_scheduler(
 
 # Loss and optimizer
 optimizer = torch.optim.AdamW(model.parameters(), eps=1e-7)
-scaler = GradScaler()
 
 # Save the initial learning rate in optimizer's param_groups
 for param_group in optimizer.param_groups:
@@ -141,19 +146,14 @@ for epoch in range(NUM_EPOCHS + WARMUP_EPOCHS):
     for i, (images, labels) in enumerate(train_pbar):
         # Move inputs and targets to the device (GPU)
         images, labels = images.to(device), labels.to(device)
-        labels = encoder(labels)
 
         # Zero the gradients
         optimizer.zero_grad()
 
-        # Cast to bfloat16
-        with autocast(dtype=torch.float16):
-            outputs = model(images)
-            loss = criterion(outputs, labels)
-
-            scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
+        outputs = model(images)
+        loss = criterion(outputs, labels)
+        loss.backward()
+        optimizer.step()
 
         train_loss += loss.item()
 
@@ -180,7 +180,6 @@ for epoch in range(NUM_EPOCHS + WARMUP_EPOCHS):
                 for j, (images, labels) in enumerate(dl_val):
                     images = images.to(device)
                     labels = labels.to(device)
-                    labels = encoder(labels)
 
                     outputs = model(images)
 
@@ -246,7 +245,6 @@ with torch.no_grad():
     for k, (images, labels) in enumerate(test_pbar):
         images = images.to(device)
         labels = labels.to(device)
-        labels = encoder(labels)
 
         outputs = model(images)
 
@@ -258,13 +256,32 @@ with torch.no_grad():
             metric_value = metric(outputs, labels)
             test_metrics_values[metric_name] += metric_value
 
+        loss_dict = { key: convert_torch_to_float(value) for key, value in loss_dict.items() }
+        loss_dict_str = { key: f"{value:.4f}" for key, value in loss_dict.items() }
+
         test_pbar.set_postfix({
             "test_loss": f"{test_loss / (k + 1):.4f}",
             **{name: f"{value / (k + 1):.4f}" for name, value in test_metrics_values.items()}
-        })    
+        })
+
+        train_pbar.set_postfix(loss_dict_str, refresh=True)
 
     print(f"Test Loss: {test_loss / (k + 1):.4f}")
 
 # Save the model
 if SAVE_BEST_MODEL:
     torch.save(best_model_state, os.path.join("./models", f"{NAME}.pt"))
+
+# Test Loss: 0.0412
+# criterion = SoftSpatialCrossEntropyLoss(
+#     method="max",
+#     classes=classes,
+#     kernel_radius=2.0,
+#     kernel_circular=True,
+#     kernel_sigma=2.0,
+#     device=device,
+# )
+# val_loss=0.0456, val_jac=0.5896, val_f1=0.6798, val_prec=0.7382, val_rec=0.6719]
+
+# val_loss=1.2871, val_jac=0.5890, val_f1=0.6762, val_prec=0.7113, val_rec=0.6706]
+# Test Loss: 1.2825

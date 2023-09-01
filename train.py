@@ -6,12 +6,12 @@ from data_loaders import load_data
 from utils import cosine_scheduler, convert_torch_to_float
 from predict import predict_func
 from model import MLPMixer
-from soft_spatial_labels import SoftSpatialCrossEntropyLoss, OneHotEncoder2D
+from soft_spatial_labels import SoftSpatialSegmentationLoss, SoftSegmentationLoss
 from torchmetrics.classification import MulticlassF1Score, MulticlassPrecision, MulticlassRecall, MulticlassJaccardIndex
 from functools import partial
 
 
-NAME = "SOFT_LABEL_LOSS_MIXER_02"
+NAME = "SOFTLOSSBASIC_MIXER_KLDIV_01"
 BATCH_SIZE = 16
 NUM_EPOCHS = 100
 WARMUP_EPOCHS = 10
@@ -20,8 +20,8 @@ PATIENCE = 10
 LEARNING_RATE = 0.001
 LEARNING_RATE_END = 0.00001
 SAVE_BEST_MODEL = True
-AUGMENTATIONS = True
-CREATE_PREDICTIONS = True
+AUGMENTATIONS = False
+CREATE_PREDICTIONS = False
 USE_SOFT_LOSS = False
 
 classes = [10, 30, 40, 50, 60, 80, 90]
@@ -31,17 +31,17 @@ model = MLPMixer(
     chw=(10, 64, 64),
     output_dim=len(classes),
     patch_size=4,
-    dim=512,
-    depth=5,
+    dim=128,
+    depth=3,
     channel_scale=2,
-    drop_n=0.1,
-    drop_p=0.1,
+    drop_n=0.0,
+    drop_p=0.0,
 )
 
 if USE_SOFT_LOSS:
-    criterion = SoftSpatialCrossEntropyLoss(
+    criterion = SoftSpatialSegmentationLoss(
         method="max",
-        loss_method="focal_error_squared",
+        loss_method="nll_poisson",
         classes=classes,
         kernel_radius=2.0,
         kernel_circular=True,
@@ -49,18 +49,14 @@ if USE_SOFT_LOSS:
         device=device,
     )
 else:
-    class EntropyLossWrapper(torch.nn.Module):
-        def __init__(self, criterion, classes, device):
-            super().__init__()
-            self.criterion = criterion
-            self.onehot = OneHotEncoder2D(classes=classes, device=device)
+    criterion = SoftSegmentationLoss(
+        smoothing=0.1,
+        loss_method="nll_poisson",
+        classes=classes,
+        device=device,
+    )
 
-        def forward(self, output, target):
-            return self.criterion(output, self.onehot(target))
-        
-    criterion = EntropyLossWrapper(torch.nn.CrossEntropyLoss(), classes, device)
-
-def metric_wrapper(output, target, metric_func, classes, device, raw=True):
+def metric_wrapper(output, target, metric_func, classes, device, raw=False):
     batch_size, channels, height, width = output.shape
     classes = torch.Tensor(classes).view(1, -1, 1, 1).to(device)
 
@@ -271,17 +267,4 @@ with torch.no_grad():
 # Save the model
 if SAVE_BEST_MODEL:
     torch.save(best_model_state, os.path.join("./models", f"{NAME}.pt"))
-
-# Test Loss: 0.0412
-# criterion = SoftSpatialCrossEntropyLoss(
-#     method="max",
-#     classes=classes,
-#     kernel_radius=2.0,
-#     kernel_circular=True,
-#     kernel_sigma=2.0,
-#     device=device,
-# )
-# val_loss=0.0456, val_jac=0.5896, val_f1=0.6798, val_prec=0.7382, val_rec=0.6719]
-
-# val_loss=1.2871, val_jac=0.5890, val_f1=0.6762, val_prec=0.7113, val_rec=0.6706]
-# Test Loss: 1.2825
+    print(f"Saved best model to ./models/{NAME}.pt")

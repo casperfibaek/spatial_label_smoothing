@@ -2,7 +2,7 @@ import buteo as beo
 import numpy as np
 import torch
 
-def predict_func(model, epoch, name, tile_size=64, n_offsets=3, batch_size=32, device=None):
+def predict_func(model, epoch, name, tile_size=64, n_offsets=3, batch_size=16, device=None):
     if device is None:
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 

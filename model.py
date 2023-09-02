@@ -251,7 +251,6 @@ class MLPMixer(nn.Module):
         self.head = nn.Sequential(
             CNNBlock(self.stem_channels, self.stem_channels // 2, drop_n=drop_n, drop_p=drop_p),
             nn.Conv2d(self.stem_channels // 2, self.output_dim, 1),
-            nn.Softmax(dim=1),
         )
 
         self.apply(self._init_weights)
@@ -285,7 +284,11 @@ class MLPMixer(nn.Module):
         x = self.forward_trunc(skip)
         x = self.skipper(skip, x)
         x = self.forward_head(x)
-        
+
+        # Ensures the values do not explode, but allows for a bit of gradient.
+        x = torch.clamp(x, -100.0, 100.0)
+        x = torch.softmax(x, dim=1)
+
         return x
 
 

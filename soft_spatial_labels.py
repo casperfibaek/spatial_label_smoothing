@@ -6,11 +6,11 @@ from typing import Optional
 from kernels import create_kernel, kernel_sobel
 
 def _calculate_loss(
-    output,
-    target_soft,
-    target_hot,
-    loss_method,
-    eps=1e-07,
+    output: torch.Tensor,
+    target_soft: torch.Tensor,
+    target_hot: torch.Tensor,
+    loss_method: Optional[str] = "cross_entropy",
+    eps: Optional[float] = 1e-07,
 ) -> torch.Tensor:
     """
     Calculates the loss using the given method. The methods here are compatible with the
@@ -62,13 +62,33 @@ def _calculate_loss(
 
 
 class SobelFilter(nn.Module):
+    """
+    Set up a class to quickly calculate the gradient magnitude of an image using the Sobel filter.
+
+    Parameters
+    ----------
+    radius : int, optional
+        The radius of the sobel filter. Default is 2.
+
+    scale : int, optional
+        The scale of the sobel filter. Default is 2.
+
+    device : str, optional
+        The device to use for the computations. Default is 'cuda' if available, else 'cpu'.
+
+    normalise : bool, optional
+        Whether to normalise the gradient magnitude or not. Default is False.
+
+    epsilon : float, optional
+        A small value to add to the denominator to avoid division by zero. Default is 1e-06.
+    """
     def __init__(self,
-        radius: int = 2,
-        scale: int = 2,
+        radius: Optional[int] = 2,
+        scale: Optional[int] = 2,
         device: Optional[str] = None,
-        normalise: bool = False,
-        epsilon=1e-06,
-    ):
+        normalise: Optional[bool] = False,
+        epsilon: Optional[float] = 1e-06,
+    ) -> None:
         super().__init__()
         self.radius = radius
         self.scale = scale
@@ -154,10 +174,10 @@ class SoftSegmentationLoss(nn.Module):
         epsilon: float = 1e-07,
     ) -> None:
         super().__init__()
-        assert isinstance(classes, list) and len(classes) > 1, "classes must be a list of at least two ints"
-        assert classes == sorted(classes), "classes must be sorted in ascending order"
-        assert isinstance(smoothing, (float, int)), "smoothing must be a float or an int"
-        assert smoothing >= 0.0 and smoothing <= 1.0, "smoothing must be between 0.0 and 1.0"
+        assert isinstance(classes, list) and len(classes) > 1, "Classes must be a list of at least two ints."
+        assert classes == sorted(classes), "Classes must be sorted in ascending order."
+        assert isinstance(smoothing, (float, int)), "Smoothing must be a float or an int."
+        assert smoothing >= 0.0 and smoothing <= 1.0, "Smoothing must be between 0.0 and 1.0."
         assert loss_method in ["cross_entropy", "dice", "logcosh_dice", "error", "focal_error", "focal_error_squared", "kl_divergence", "nll", "nll_poisson"], \
             "loss_method must be one of 'cross_entropy', 'dice', 'logcosh_dice', 'error', 'focal_error', 'focal_error_squared', 'kl_divergence', 'nll', or 'nll_poisson'."
 
@@ -230,11 +250,6 @@ class SoftSpatialSegmentationLoss(nn.Module):
 
     channel_last : bool, optional
         Whether the input is channel last or not. Default is False.
-
-    Returns
-    -------
-    loss : torch.Tensor
-        The computed loss.
     """
     def __init__(
         self,

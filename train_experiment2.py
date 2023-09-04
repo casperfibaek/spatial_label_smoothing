@@ -82,16 +82,25 @@ def run_test(
             device=device,
         )
 
-    metric_jac = partial(metric_wrapper, metric_func=partial(MulticlassJaccardIndex(num_classes=len(classes), average="macro").to(device)), classes=classes, device=device)
-    metric_f1 = partial(metric_wrapper, metric_func=partial(MulticlassF1Score(num_classes=len(classes), average="macro").to(device)), classes=classes, device=device)
-    metric_precision = partial(metric_wrapper, metric_func=partial(MulticlassPrecision(num_classes=len(classes), average="macro").to(device)), classes=classes, device=device)
-    metric_recall = partial(metric_wrapper, metric_func=partial(MulticlassRecall(num_classes=len(classes), average="macro").to(device)), classes=classes, device=device)
+    metric_jac = partial(metric_wrapper, metric_func=partial(MulticlassJaccardIndex(num_classes=len(classes), average="macro").to(device)), classes=classes, device=device, raw=False)
+    metric_f1 = partial(metric_wrapper, metric_func=partial(MulticlassF1Score(num_classes=len(classes), average="macro").to(device)), classes=classes, device=device, raw=False)
+    metric_precision = partial(metric_wrapper, metric_func=partial(MulticlassPrecision(num_classes=len(classes), average="macro").to(device)), classes=classes, device=device, raw=False)
+    metric_recall = partial(metric_wrapper, metric_func=partial(MulticlassRecall(num_classes=len(classes), average="macro").to(device)), classes=classes, device=device, raw=False)
+
+    # metric_jac_raw = partial(metric_wrapper, metric_func=partial(MulticlassJaccardIndex(num_classes=len(classes), average="macro").to(device)), classes=classes, device=device, raw=True)
+    # metric_f1_raw = partial(metric_wrapper, metric_func=partial(MulticlassF1Score(num_classes=len(classes), average="macro").to(device)), classes=classes, device=device, raw=True)
+    # metric_precision_raw = partial(metric_wrapper, metric_func=partial(MulticlassPrecision(num_classes=len(classes), average="macro").to(device)), classes=classes, device=device, raw=True)
+    # metric_recall_raw = partial(metric_wrapper, metric_func=partial(MulticlassRecall(num_classes=len(classes), average="macro").to(device)), classes=classes, device=device, raw=True)
 
     _metrics = {
         "jac": metric_jac,
+        # "rjac": metric_jac_raw,
         "f1": metric_f1,
+        # "rf1": metric_f1_raw,
         "prec": metric_precision,
+        # "rprec": metric_precision_raw,
         "rec": metric_recall,
+        # "rrec": metric_recall_raw,
     }
 
     dl_train, dl_val, dl_test = load_data(with_augmentations=True, batch_size=BATCH_SIZE)

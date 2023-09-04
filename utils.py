@@ -35,7 +35,7 @@ def cosine_scheduler(base_value, final_value, epochs, warmup_epochs=0, start_war
     return schedule
 
 
-def metric_wrapper(output, target, metric_func, classes, device, raw=True):
+def metric_wrapper(output, target, metric_func, classes, device, raw=False):
     batch_size, channels, height, width = output.shape
     classes = torch.Tensor(classes).view(1, -1, 1, 1).to(device)
 

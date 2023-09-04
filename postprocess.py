@@ -22,9 +22,9 @@ import pandas as pd
 
 FOLDER = "./logs/"
 
-dst = pd.DataFrame(columns=["loss_func", "soft", "prot", "kr", "kc", "ks", "var", "loss", "jac", "f1", "prec", "rec", "std", "std_jac", "std_f1", "std_prec", "std_rec"])
+dst = pd.DataFrame(columns=["loss_func", "soft", "prot", "kr", "kc", "ks", "var", "smo", "loss", "jac", "f1", "prec", "rec", "std", "std_jac", "std_f1", "std_prec", "std_rec"])
 for path in glob(os.path.join(FOLDER, "0_LOSS-cross_entropy_SOFT-True_PROT-*")):
-    tmp = pd.DataFrame(columns=["iter", "loss_func", "soft", "prot", "kr", "kc", "ks", "var", "loss", "jac", "f1", "prec", "rec"])
+    tmp = pd.DataFrame(columns=["iter", "loss_func", "soft", "prot", "kr", "kc", "ks", "var", "smo", "loss", "jac", "f1", "prec", "rec"])
 
     for idx, path2 in enumerate(glob(path.replace("0_LOSS", "*_LOSS"))):
         name = path2.split("_")
@@ -51,6 +51,7 @@ for path in glob(os.path.join(FOLDER, "0_LOSS-cross_entropy_SOFT-True_PROT-*")):
         row["kc"] = kc
         row["ks"] = ks
         row["var"] = var
+        row["smo"] = "NA"
 
         # Add row to dst without using dst.append
         tmp.loc[idx] = row
@@ -73,6 +74,7 @@ for path in glob(os.path.join(FOLDER, "0_LOSS-cross_entropy_SOFT-True_PROT-*")):
             kc,
             ks,
             var,
+            "NA",
             mean["loss"],
             mean["jac"],
             mean["f1"],
@@ -88,5 +90,76 @@ for path in glob(os.path.join(FOLDER, "0_LOSS-cross_entropy_SOFT-True_PROT-*")):
         dst.loc[len(dst)] = new_row
     except:
         import pdb; pdb.set_trace()
+
+
+for path in glob(os.path.join(FOLDER, "0_LOSS-cross_entropy_SOFT-False_SMOOTH-*")):
+    tmp = pd.DataFrame(columns=["iter", "loss_func", "soft", "prot", "kr", "kc", "ks", "var", "smo", "loss", "jac", "f1", "prec", "rec"])
+
+    for idx, path2 in enumerate(glob(path.replace("0_LOSS", "*_LOSS"))):
+        name = path2.split("_")
+        iteration = name[0][-1]
+        loss_func = (name[1] + name[2]).replace("LOSS-", "")
+        soft = False
+        prot = "NA"
+        kr = "NA"
+        kc = "NA"
+        ks = "NA"
+        var = "NA"
+        smo = name[4].replace("SMOOTH-", "").replace(".csv", "")
+
+        try:
+            csv = pd.read_csv(path2)
+        except pd.errors.EmptyDataError:
+            continue
+
+        row = csv.iloc[-1].dropna()
+        row["iter"] = iteration
+        row["loss_func"] = loss_func
+        row["soft"] = soft
+        row["prot"] = prot
+        row["kr"] = kr
+        row["kc"] = kc
+        row["ks"] = ks
+        row["var"] = var
+        row["smo"] = smo
+
+        # Add row to dst without using dst.append
+        tmp.loc[idx] = row
+
+    # Cast to float
+    values = ["loss", "jac", "f1", "prec", "rec"]
+    tmp[values] = tmp[values].astype(float)
+
+    # Compute mean and std along the columns dimensions
+    mean = tmp[values].mean(axis=0)
+    std = tmp[values].std(axis=0)
+
+    try:
+        # Add mean and std to dst
+        new_row = [
+            loss_func,
+            soft,
+            prot,
+            kr,
+            kc,
+            ks,
+            var,
+            smo,
+            mean["loss"],
+            mean["jac"],
+            mean["f1"],
+            mean["prec"],
+            mean["rec"],
+            std["loss"],
+            std["jac"],
+            std["f1"],
+            std["prec"],
+            std["rec"],
+        ]
+    
+        dst.loc[len(dst)] = new_row
+    except:
+        import pdb; pdb.set_trace()
+
 
 dst.to_csv("./logs/losses.csv", index=False)

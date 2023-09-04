@@ -12,9 +12,9 @@ from functools import partial
 
 
 BATCH_SIZE = 16
-NUM_EPOCHS = 100
-WARMUP_EPOCHS = 5
-MIN_EPOCHS = 20
+NUM_EPOCHS = 50
+WARMUP_EPOCHS = 10
+MIN_EPOCHS = 25
 PATIENCE = 10
 LEARNING_RATE = 0.001
 LEARNING_RATE_END = 0.00001
@@ -25,7 +25,7 @@ CREATE_PREDICTION = True
 
 def run_test(
     loss_method="cross_entropy",
-    flip_protection="max",
+    flip_protection="half",
     use_softloss=True,
     smoothing=0.1,
     kernel_radius=1.0,
@@ -34,14 +34,10 @@ def run_test(
     scale_using_var=False,
     iteration=0,
 ):
-    NAME = f"{iteration}"
+    NAME = f"EXP2-{iteration}"
     NAME += f"_LOSS-{loss_method}"
     NAME += f"_SOFT-{use_softloss}"
-    NAME += f"_PROT-{flip_protection}" if use_softloss else ""
     NAME += f"_SMOOTH-{smoothing}" if not use_softloss else ""
-    NAME += f"_KR-{kernel_radius}" if use_softloss else ""
-    NAME += f"_KC-{kernel_circular}" if use_softloss else ""
-    NAME += f"_KS-{kernel_sigma}" if use_softloss else ""
     NAME += f"_VAR-{scale_using_var}" if use_softloss else ""
 
     print(f"Running test {NAME}...")
@@ -60,10 +56,10 @@ def run_test(
         chw=(10, 64, 64),
         output_dim=len(classes),
         patch_size=4,
-        dim=256,
-        depth=3,
+        dim=512,
+        depth=5,
         channel_scale=2,
-        drop_n=0.0,
+        drop_n=0.1,
         drop_p=0.1,
     )
 
@@ -287,27 +283,20 @@ def run_test(
 
 if __name__ == "__main__":
     model_run = 0
-    for loss_method in ["cross_entropy"]:
-        for flip_protection in ["max", "half", None]:
-            for kernel_radius in [1.0, 2.0]:
-                for sigma in [1.0, 2.0]:
-                    for scale_using_var in [True, False]:
-                        for iteration in [0, 1, 2]:
-                            run_test(
-                                loss_method=loss_method,
-                                flip_protection=flip_protection,
-                                use_softloss=True,
-                                kernel_radius=kernel_radius,
-                                kernel_circular=True,
-                                kernel_sigma=sigma,
-                                scale_using_var=scale_using_var,
-                                iteration=iteration,
-                            )
-                            model_run += 1
-                            print(model_run)
+    for loss_method in ["cross_entropy", "logcosh_dice", "kl_divergence", "nll"]:
+        for scale_using_var in [True, False]:
+            for iteration in [0, 1, 2]:
+                run_test(
+                    loss_method=loss_method,
+                    use_softloss=True,
+                    iteration=iteration,
+                    scale_using_var=scale_using_var,
+                )
+                model_run += 1
+                print(model_run)
 
-    for loss_method in ["cross_entropy"]:
-        for smoothing in [0.0, 0.1, 0.2]:
+    for loss_method in ["cross_entropy", "logcosh_dice", "kl_divergence", "nll"]:
+        for smoothing in [0.0, 0.1]:
             for iteration in [0, 1, 2]:
                 run_test(
                     loss_method=loss_method,

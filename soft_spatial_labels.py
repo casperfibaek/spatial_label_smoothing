@@ -253,7 +253,7 @@ class SoftSpatialSegmentationLoss(nn.Module):
     """
     def __init__(
         self,
-        method: Optional[str] = "max",
+        method: Optional[str] = "half",
         loss_method: str = "cross_entropy",
         classes: Optional[list[int]] = None,
         scale_using_var: bool = False,

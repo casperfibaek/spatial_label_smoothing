@@ -12,7 +12,7 @@ from functools import partial
 
 
 BATCH_SIZE = 16
-NUM_EPOCHS = 100
+NUM_EPOCHS = 50
 WARMUP_EPOCHS = 5
 MIN_EPOCHS = 20
 PATIENCE = 10

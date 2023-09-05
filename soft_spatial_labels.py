@@ -219,8 +219,9 @@ class SoftSpatialSegmentationLoss(nn.Module):
     method : str, optional
         The method to use for smoothing the labels. One of 'half', 'max', or None.
         By setting a method, you ensure that the center pixel will never 'flip' to another class.
-        Default is 'max'.
-        - `'half'` will set the center of the kernel to at least half the sum of the surrounding weighted classes.
+        Default is 'half'.
+        - `'half'` will set the pixel to at least half the sum of the weighted classes for the pixel.
+        - `'kernel_half'` will set the center of the kernel to be weighted as half the sum of the surrounding weighted classes. Multiplied by `(1 + self.kernel_size) / self.kernel_size`.
         - `'max'` will set the center of the kernel to be weighted as the maximum of the surrounding weighted classes. Multiplied by `(1 + self.kernel_size) / self.kernel_size`. 
         - `None` will not treat the center pixel differently. Does not ensure that the center pixel will not 'flip' to another class.
 
@@ -258,6 +259,7 @@ class SoftSpatialSegmentationLoss(nn.Module):
         classes: Optional[list[int]] = None,
         scale_using_var: bool = False,
         var_scale: float = 2.0,
+        var_power: float = 1.0,
         kernel_radius: float = 1.0,
         kernel_circular: bool = True,
         kernel_sigma: float = 2.0,
@@ -266,7 +268,7 @@ class SoftSpatialSegmentationLoss(nn.Module):
         channel_last: bool = False,
     ) -> None:
         super().__init__()
-        assert method in ["half", "max", None], "method must be one of 'half', 'max', or None"
+        assert method in ["half", "max", None], "method must be one of 'half', 'kernel_half', 'max', or None"
         assert loss_method in ["cross_entropy", "dice", "logcosh_dice", "error", "focal_error", "focal_error_squared", "kl_divergence", "nll", "nll_poisson"], \
             "loss_method must be one of 'cross_entropy', 'dice', 'logcosh_dice', 'error', 'focal_error', 'focal_error_squared', 'kl_divergence', 'nll', or 'nll_poisson'."
         assert isinstance(classes, list) and len(classes) > 1, "classes must be a list of at least two ints"
@@ -282,6 +284,7 @@ class SoftSpatialSegmentationLoss(nn.Module):
         self.channel_last = channel_last
         self.scale_using_var = scale_using_var
         self.var_scale = var_scale
+        self.var_power = var_power
         self.eps = torch.Tensor([epsilon]).to(self.device)
 
         # Precalculate the classes and reshape them for broadcasting
@@ -309,7 +312,7 @@ class SoftSpatialSegmentationLoss(nn.Module):
             self.sobel_filter = SobelFilter(radius=self.kernel_width // 2, scale=self.var_scale, device=self.device)
 
         # Set the center of the kernel to be at least half the sum of the surrounding weighted classes
-        if method == "half":
+        if method == "kernel_half":
             self.kernel_np[self.kernel_np.shape[0] // 2, self.kernel_np.shape[1] // 2] = self.kernel_np.sum() * self.strength
 
         # Padding for conv2d
@@ -335,7 +338,8 @@ class SoftSpatialSegmentationLoss(nn.Module):
             variance = self.sobel_filter(features)
             variance = F.pad(variance, pad=(self.padding, self.padding, self.padding, self.padding), mode="replicate")
 
-            target_hot_pad = target_hot_pad * variance
+            variance_power = torch.pow(variance, self.var_power)
+            target_hot_pad = target_hot_pad * (variance_power.max() - variance_power)
 
         # Convolve the padded targets with the custom kernel
         convolved = F.conv2d(
@@ -348,16 +352,24 @@ class SoftSpatialSegmentationLoss(nn.Module):
 
         # If the method is 'max', then we need to find the maximum weighted class in the convolved tensor
         if self.method == "max":
-            maxpool = F.max_pool2d(convolved, kernel_size=self.kernel_width, stride=1, padding=self.padding)
-            surroundings = (1 - target_hot_pad) * convolved
-            center = ((maxpool * target_hot_pad) * self.strength)
-            convolved = center + surroundings
+            valmax, argmax = torch.max(convolved, dim=1, keepdim=True)
+            _, argmax_hot = torch.max(target_hot_pad, dim=1, keepdim=True)
+
+            weight = torch.where(argmax == argmax_hot, convolved, valmax * self.strength)
+            convolved = torch.where(target_hot_pad == 1, weight, convolved)
+
+        elif self.method == "half":
+            weight = self.kernel_np.sum() * self.strength
+            convolved = torch.where(target_hot_pad == 1, weight, convolved)
+
+        elif self.method == "kernel_half" or self.method is None:
+            pass
 
         # Remove the padding
         convolved = convolved[:, :, self.padding:-self.padding, self.padding:-self.padding]
 
         # The output is not normalised, so we can either apply softmax or normalise it using the sum.
-        target_soft = convolved / (self.eps + convolved.sum(dim=(1), keepdim=True))
+        target_soft = convolved / torch.maximum(convolved.sum(dim=(1), keepdim=True), self.eps)
 
         # Calculate the loss using the smoothed targets.
         loss = _calculate_loss(output, target_soft, target_hot, self.loss_method, self.eps)

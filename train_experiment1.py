@@ -35,13 +35,9 @@ def run_test(
     iteration=0,
 ):
     NAME = f"EXP1-{iteration}"
-    NAME += f"_LOSS-{loss_method}"
     NAME += f"_SOFT-{use_softloss}"
     NAME += f"_PROT-{flip_protection}" if use_softloss else ""
     NAME += f"_SMOOTH-{smoothing}" if not use_softloss else ""
-    NAME += f"_KR-{kernel_radius}" if use_softloss else ""
-    NAME += f"_KC-{kernel_circular}" if use_softloss else ""
-    NAME += f"_KS-{kernel_sigma}" if use_softloss else ""
     NAME += f"_VAR-{scale_using_var}" if use_softloss else ""
 
     print(f"Running test {NAME}...")
@@ -287,33 +283,26 @@ def run_test(
 
 if __name__ == "__main__":
     model_run = 0
-    for loss_method in ["cross_entropy"]:
-        for flip_protection in ["max", "half", None]:
-            for kernel_radius in [1.0, 2.0]:
-                for sigma in [1.0, 2.0]:
-                    for scale_using_var in [True, False]:
-                        for iteration in [0, 1, 2]:
-                            run_test(
-                                loss_method=loss_method,
-                                flip_protection=flip_protection,
-                                use_softloss=True,
-                                kernel_radius=kernel_radius,
-                                kernel_circular=True,
-                                kernel_sigma=sigma,
-                                scale_using_var=scale_using_var,
-                                iteration=iteration,
-                            )
-                            model_run += 1
-                            print(model_run)
+    for flip_protection in ["half", "kernel_half", "max", None]:
+            for scale_using_var in [True, False]:
+                for iteration in [0, 1, 2]:
+                    run_test(
+                        flip_protection=flip_protection,
+                        use_softloss=True,
+                        scale_using_var=scale_using_var,
+                        iteration=iteration,
+                    )
+                    model_run += 1
+                    print(model_run)
 
-    for loss_method in ["cross_entropy"]:
-        for smoothing in [0.0, 0.1, 0.2]:
-            for iteration in [0, 1, 2]:
-                run_test(
-                    loss_method=loss_method,
-                    use_softloss=False,
-                    smoothing=smoothing,
-                    iteration=iteration,
-                )
-                model_run += 1
-                print(model_run)
+    # for loss_method in ["cross_entropy"]:
+    #     for smoothing in [0.0, 0.1, 0.2]:
+    #         for iteration in [0, 1, 2]:
+    #             run_test(
+    #                 loss_method=loss_method,
+    #                 use_softloss=False,
+    #                 smoothing=smoothing,
+    #                 iteration=iteration,
+    #             )
+    #             model_run += 1
+    #             print(model_run)

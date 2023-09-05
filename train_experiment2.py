@@ -292,19 +292,19 @@ def run_test(
 
 if __name__ == "__main__":
     model_run = 0
-    for loss_method in ["cross_entropy", "logcosh_dice", "kl_divergence", "nll"]:
-        for scale_using_var in [True, False]:
-            for iteration in [0, 1, 2]:
-                run_test(
-                    loss_method=loss_method,
-                    use_softloss=True,
-                    iteration=iteration,
-                    scale_using_var=scale_using_var,
-                )
-                model_run += 1
-                print(model_run)
+    # for loss_method in ["cross_entropy", "logcosh_dice", "kl_divergence"]:
+    #     for scale_using_var in [True, False]:
+    #         for iteration in [0, 1, 2]:
+    #             run_test(
+    #                 loss_method=loss_method,
+    #                 use_softloss=True,
+    #                 iteration=iteration,
+    #                 scale_using_var=scale_using_var,
+    #             )
+    #             model_run += 1
+    #             print(model_run)
 
-    for loss_method in ["cross_entropy", "logcosh_dice", "kl_divergence", "nll"]:
+    for loss_method in ["cross_entropy", "logcosh_dice", "kl_divergence"]:
         for smoothing in [0.0, 0.1]:
             for iteration in [0, 1, 2]:
                 run_test(

@@ -5,8 +5,8 @@ import numpy as np
 import pandas as pd
 
 ARGMAX = False
-EXP1 = True
-EXP2 = False
+EXP1 = False
+EXP2 = True
 
 
 if ARGMAX:
@@ -184,7 +184,7 @@ for path in glob(os.path.join(FOLDER, "EXP2-0*")):
 
         name = path2.split("_")
         iteration = name[0][-1]
-        if "cross_entropy" in name:
+        if "nll" not in name:
             loss_func = (name[1] + name[2]).replace("LOSS-", "")
             soft = name[3].replace("SOFT-", "")
             if soft == "True":

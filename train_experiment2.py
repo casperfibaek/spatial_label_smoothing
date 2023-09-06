@@ -12,10 +12,10 @@ from functools import partial
 
 
 BATCH_SIZE = 16
-NUM_EPOCHS = 50
+NUM_EPOCHS = 100
 WARMUP_EPOCHS = 10
-MIN_EPOCHS = 25
-PATIENCE = 10
+MIN_EPOCHS = 50
+PATIENCE = 20
 LEARNING_RATE = 0.001
 LEARNING_RATE_END = 0.00001
 SAVE_BEST_MODEL = True
@@ -25,7 +25,7 @@ CREATE_PREDICTION = True
 
 def run_test(
     loss_method="cross_entropy",
-    flip_protection="half",
+    flip_protection="max",
     use_softloss=True,
     smoothing=0.1,
     kernel_radius=1.0,
@@ -35,8 +35,8 @@ def run_test(
     iteration=0,
 ):
     NAME = f"EXP2-{iteration}"
-    NAME += f"_LOSS-{loss_method}"
     NAME += f"_SOFT-{use_softloss}"
+    NAME += f"_PROT-{flip_protection}" if use_softloss else ""
     NAME += f"_SMOOTH-{smoothing}" if not use_softloss else ""
     NAME += f"_VAR-{scale_using_var}" if use_softloss else ""
 
@@ -56,8 +56,8 @@ def run_test(
         chw=(10, 64, 64),
         output_dim=len(classes),
         patch_size=4,
-        dim=512,
-        depth=5,
+        dim=1024,
+        depth=9,
         channel_scale=2,
         drop_n=0.1,
         drop_p=0.1,
@@ -82,25 +82,16 @@ def run_test(
             device=device,
         )
 
-    metric_jac = partial(metric_wrapper, metric_func=partial(MulticlassJaccardIndex(num_classes=len(classes), average="macro").to(device)), classes=classes, device=device, raw=False)
-    metric_f1 = partial(metric_wrapper, metric_func=partial(MulticlassF1Score(num_classes=len(classes), average="macro").to(device)), classes=classes, device=device, raw=False)
-    metric_precision = partial(metric_wrapper, metric_func=partial(MulticlassPrecision(num_classes=len(classes), average="macro").to(device)), classes=classes, device=device, raw=False)
-    metric_recall = partial(metric_wrapper, metric_func=partial(MulticlassRecall(num_classes=len(classes), average="macro").to(device)), classes=classes, device=device, raw=False)
-
-    # metric_jac_raw = partial(metric_wrapper, metric_func=partial(MulticlassJaccardIndex(num_classes=len(classes), average="macro").to(device)), classes=classes, device=device, raw=True)
-    # metric_f1_raw = partial(metric_wrapper, metric_func=partial(MulticlassF1Score(num_classes=len(classes), average="macro").to(device)), classes=classes, device=device, raw=True)
-    # metric_precision_raw = partial(metric_wrapper, metric_func=partial(MulticlassPrecision(num_classes=len(classes), average="macro").to(device)), classes=classes, device=device, raw=True)
-    # metric_recall_raw = partial(metric_wrapper, metric_func=partial(MulticlassRecall(num_classes=len(classes), average="macro").to(device)), classes=classes, device=device, raw=True)
+    metric_jac = partial(metric_wrapper, metric_func=partial(MulticlassJaccardIndex(num_classes=len(classes), average="macro").to(device)), classes=classes, device=device)
+    metric_f1 = partial(metric_wrapper, metric_func=partial(MulticlassF1Score(num_classes=len(classes), average="macro").to(device)), classes=classes, device=device)
+    metric_precision = partial(metric_wrapper, metric_func=partial(MulticlassPrecision(num_classes=len(classes), average="macro").to(device)), classes=classes, device=device)
+    metric_recall = partial(metric_wrapper, metric_func=partial(MulticlassRecall(num_classes=len(classes), average="macro").to(device)), classes=classes, device=device)
 
     _metrics = {
         "jac": metric_jac,
-        # "rjac": metric_jac_raw,
         "f1": metric_f1,
-        # "rf1": metric_f1_raw,
         "prec": metric_precision,
-        # "rprec": metric_precision_raw,
         "rec": metric_recall,
-        # "rrec": metric_recall_raw,
     }
 
     dl_train, dl_val, dl_test = load_data(with_augmentations=True, batch_size=BATCH_SIZE)
@@ -292,26 +283,23 @@ def run_test(
 
 if __name__ == "__main__":
     model_run = 0
-    # for loss_method in ["cross_entropy", "logcosh_dice", "kl_divergence"]:
-    #     for scale_using_var in [True, False]:
-    #         for iteration in [0, 1, 2]:
-    #             run_test(
-    #                 loss_method=loss_method,
-    #                 use_softloss=True,
-    #                 iteration=iteration,
-    #                 scale_using_var=scale_using_var,
-    #             )
-    #             model_run += 1
-    #             print(model_run)
+    for flip_protection in ["half", "kernel_half", "max", None]:
+        for iteration in [0]:
+            run_test(
+                flip_protection=flip_protection,
+                use_softloss=True,
+                scale_using_var=False,
+                iteration=iteration,
+            )
+            model_run += 1
+            print(model_run)
 
-    for loss_method in ["cross_entropy", "logcosh_dice", "kl_divergence"]:
-        for smoothing in [0.0, 0.1]:
-            for iteration in [0, 1, 2]:
-                run_test(
-                    loss_method=loss_method,
-                    use_softloss=False,
-                    smoothing=smoothing,
-                    iteration=iteration,
-                )
-                model_run += 1
-                print(model_run)
+    for smoothing in [0.0, 0.1]:
+        for iteration in [0]:
+            run_test(
+                use_softloss=False,
+                smoothing=smoothing,
+                iteration=iteration,
+            )
+            model_run += 1
+            print(model_run)

@@ -268,9 +268,14 @@ class SoftSpatialSegmentationLoss(nn.Module):
         channel_last: bool = False,
     ) -> None:
         super().__init__()
-        assert method in ["half", "max", None], "method must be one of 'half', 'kernel_half', 'max', or None"
-        assert loss_method in ["cross_entropy", "dice", "logcosh_dice", "error", "focal_error", "focal_error_squared", "kl_divergence", "nll", "nll_poisson"], \
-            "loss_method must be one of 'cross_entropy', 'dice', 'logcosh_dice', 'error', 'focal_error', 'focal_error_squared', 'kl_divergence', 'nll', or 'nll_poisson'."
+        assert method in ["half", "kernel_half", "max", None], \
+            "method must be one of 'half', 'kernel_half', 'max', or None"
+        assert loss_method in [
+            "cross_entropy", "dice", "logcosh_dice", "error", "focal_error",
+            "focal_error_squared", "kl_divergence", "nll", "nll_poisson",
+        ], \
+            "loss_method must be one of 'cross_entropy', 'dice', 'logcosh_dice', 'error', 'focal_error',\
+                'focal_error_squared', 'kl_divergence', 'nll', or 'nll_poisson'."
         assert isinstance(classes, list) and len(classes) > 1, "classes must be a list of at least two ints"
         assert classes == sorted(classes), "classes must be sorted in ascending order"
 
@@ -296,7 +301,7 @@ class SoftSpatialSegmentationLoss(nn.Module):
             radius=kernel_radius,
             circular=kernel_circular,
             distance_weighted=True,
-            hole=False if method is None else True,
+            hole=False if method in [None, "max"] else True,
             method=3,
             sigma=kernel_sigma,
             normalised=False
@@ -350,7 +355,7 @@ class SoftSpatialSegmentationLoss(nn.Module):
             groups=self.classes_count,
         )
 
-        # If the method is 'max', then we need to find the maximum weighted class in the convolved tensor
+        # Handle the flip protection methods
         if self.method == "max":
             valmax, argmax = torch.max(convolved, dim=1, keepdim=True)
             _, argmax_hot = torch.max(target_hot_pad, dim=1, keepdim=True)
@@ -362,6 +367,7 @@ class SoftSpatialSegmentationLoss(nn.Module):
             weight = self.kernel_np.sum() * self.strength
             convolved = torch.where(target_hot_pad == 1, weight, convolved)
 
+        # No handling necessary for these two methods
         elif self.method == "kernel_half" or self.method is None:
             pass
 

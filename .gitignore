@@ -166,3 +166,6 @@ cython_debug/
 /predictions/*.xml
 /models/*.pt
 /models/*.pth
+/visualisations/*.tif
+/visualisations/*.zip
+/visualisations/*.xml

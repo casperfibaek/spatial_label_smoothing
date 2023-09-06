@@ -22,10 +22,13 @@ beo.array_to_raster(classes_arr, reference=labels, out_path=os.path.join(FOLDER_
 
 smoothing = 0.1
 global_smooth = ((1 - smoothing) * classes_arr) + (smoothing / len(classes))
-beo.array_to_raster(global_smooth, reference=labels, out_path=os.path.join(FOLDER_DST, "naestved_label_lc_smooth_global.tif"))
+beo.array_to_raster(global_smooth, reference=labels, out_path=os.path.join(FOLDER_DST, "naestved_label_lc_smooth_global01.tif"))
 
 smooth_half = beo.spatial_label_smoothing(arr_label, radius=RADIUS, method="half")
-beo.array_to_raster(smooth_half, reference=labels, out_path=os.path.join(FOLDER_DST, "naestved_label_lc_smooth_half2.tif"))
+beo.array_to_raster(smooth_half, reference=labels, out_path=os.path.join(FOLDER_DST, "naestved_label_lc_smooth_half.tif"))
+
+smooth_half = beo.spatial_label_smoothing(arr_label, radius=RADIUS, method="kernel")
+beo.array_to_raster(smooth_half, reference=labels, out_path=os.path.join(FOLDER_DST, "naestved_label_lc_smooth_kernelhalf.tif"))
 
 smooth_max = beo.spatial_label_smoothing(arr_label, radius=RADIUS, method="max")
 beo.array_to_raster(smooth_max, reference=labels, out_path=os.path.join(FOLDER_DST, "naestved_label_lc_smooth_max.tif"))
@@ -41,7 +44,10 @@ sobel = sobel.max() - sobel
 beo.array_to_raster(sobel, reference=labels, out_path=os.path.join(FOLDER_DST, "naestved_label_lc_sobel.tif"))
 
 smooth_half_sobel = beo.spatial_label_smoothing(arr_label, radius=RADIUS, method="half", variance=sobel)
-beo.array_to_raster(smooth_half_sobel, reference=labels, out_path=os.path.join(FOLDER_DST, "naestved_label_lc_smooth_half_sobel2.tif"))
+beo.array_to_raster(smooth_half_sobel, reference=labels, out_path=os.path.join(FOLDER_DST, "naestved_label_lc_smooth_half_sobel.tif"))
+
+smooth_half_sobel = beo.spatial_label_smoothing(arr_label, radius=RADIUS, method="kernel", variance=sobel)
+beo.array_to_raster(smooth_half_sobel, reference=labels, out_path=os.path.join(FOLDER_DST, "naestved_label_lc_smooth_kernelhalf_sobel.tif"))
 
 smooth_max_sobel = beo.spatial_label_smoothing(arr_label, radius=RADIUS, method="max", variance=sobel)
 beo.array_to_raster(smooth_max_sobel, reference=labels, out_path=os.path.join(FOLDER_DST, "naestved_label_lc_smooth_max_sobel.tif"))

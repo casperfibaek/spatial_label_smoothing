@@ -13,6 +13,9 @@ class SoftSpatialSegmentationLoss(nn.Module):
 
     Parameters
     ----------
+    loss_func : Callable
+        The loss function to use for the loss. E.g. `torch.nn.CrossEntropyLoss()`.
+
     method : str, optional
         The method to use for smoothing the labels. One of 'half', 'max', or None.
         By setting a method, you ensure that the center pixel will never 'flip' to another class.

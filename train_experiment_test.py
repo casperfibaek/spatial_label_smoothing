@@ -5,7 +5,7 @@ from tqdm import tqdm
 from data_loaders import load_data
 from utils import cosine_scheduler, convert_torch_to_float, metric_wrapper
 from predict import predict_func
-from model import MLPMixer
+from model2 import MLPMixer
 from soft_spatial_labels import SoftSpatialSegmentationLoss, SoftSegmentationLoss
 from torchmetrics.classification import MulticlassF1Score, MulticlassPrecision, MulticlassRecall, MulticlassJaccardIndex
 from functools import partial
@@ -25,7 +25,7 @@ CREATE_PREDICTION = True
 
 def run_test(
     loss_method="cross_entropy",
-    flip_protection="max",
+    flip_protection="kernel_half",
     use_softloss=True,
     smoothing=0.1,
     kernel_radius=1.0,
@@ -34,19 +34,21 @@ def run_test(
     scale_using_var=False,
     iteration=0,
 ):
-    NAME = f"EXP1-{iteration}"
-    NAME += f"_SOFT-{use_softloss}"
-    NAME += f"_PROT-{flip_protection}" if use_softloss else ""
-    NAME += f"_SMOOTH-{smoothing}" if not use_softloss else ""
-    NAME += f"_VAR-{scale_using_var}" if use_softloss else ""
+    # NAME = f"EXP1-{iteration}"
+    # NAME += f"_SOFT-{use_softloss}"
+    # NAME += f"_PROT-{flip_protection}" if use_softloss else ""
+    # NAME += f"_SMOOTH-{smoothing}" if not use_softloss else ""
+    # NAME += f"_VAR-{scale_using_var}" if use_softloss else ""
 
-    print(f"Running test {NAME}...")
-    print("")
-    NAME = "BOOBOBOBOBOBOBOBOBBBBsssB"
+    # print(f"Running test {NAME}...")
+    # print("")
+    # NAME = "BOOBOBOBOBOBOBOBOBBBBsssB"
 
-    if os.path.exists(f"./logs/{NAME}.csv"):
-        print(f"Test {NAME} already run. Skipping...")
-        return
+    # if os.path.exists(f"./logs/{NAME}.csv"):
+    #     print(f"Test {NAME} already run. Skipping...")
+    #     return
+
+    NAME = "TESTTESTTEST_new_mixer_class_offset_simple"
 
     log_file = open(f"./logs/{NAME}.csv", "w")
 
@@ -56,12 +58,6 @@ def run_test(
     model = MLPMixer(
         chw=(10, 64, 64),
         output_dim=len(classes),
-        patch_size=4,
-        dim=256,
-        depth=3,
-        channel_scale=2,
-        drop_n=0.1,
-        drop_p=0.1,
     )
 
     if use_softloss:
@@ -283,25 +279,10 @@ def run_test(
 
 
 if __name__ == "__main__":
-    model_run = 0
-    for flip_protection in ["half", "kernel_half", "max", None]:
-            for scale_using_var in [True, False]:
-                for iteration in [0, 1, 2]:
-                    run_test(
-                        flip_protection=flip_protection,
-                        use_softloss=True,
-                        scale_using_var=scale_using_var,
-                        iteration=iteration,
-                    )
-                    model_run += 1
-                    print(model_run)
-
-    for smoothing in [0.0, 0.1, 0.2]:
-        for iteration in [0, 1, 2]:
-            run_test(
-                use_softloss=False,
-                smoothing=smoothing,
-                iteration=iteration,
-            )
-            model_run += 1
-            print(model_run)
+    run_test(
+        loss_method="cross_entropy",
+        flip_protection="kernel_half",
+        use_softloss=True,
+        scale_using_var=False,
+        iteration=0,
+    )

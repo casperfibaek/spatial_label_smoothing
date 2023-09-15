@@ -254,7 +254,7 @@ class SoftSpatialSegmentationLoss(nn.Module):
     """
     def __init__(
         self,
-        method: Optional[str] = "half",
+        method: Optional[str] = "kernel_half",
         loss_method: str = "cross_entropy",
         classes: Optional[list[int]] = None,
         scale_using_var: bool = False,
@@ -263,6 +263,7 @@ class SoftSpatialSegmentationLoss(nn.Module):
         kernel_radius: float = 1.0,
         kernel_circular: bool = True,
         kernel_sigma: float = 2.0,
+        allow_overshoot: bool = False,
         epsilon: float = 1e-07,
         device: Optional[str] = None,
         channel_last: bool = False,
@@ -290,6 +291,7 @@ class SoftSpatialSegmentationLoss(nn.Module):
         self.scale_using_var = scale_using_var
         self.var_scale = var_scale
         self.var_power = var_power
+        self.allow_overshoot = allow_overshoot
         self.eps = torch.Tensor([epsilon]).to(self.device)
 
         # Precalculate the classes and reshape them for broadcasting
@@ -376,6 +378,18 @@ class SoftSpatialSegmentationLoss(nn.Module):
 
         # The output is not normalised, so we can either apply softmax or normalise it using the sum.
         target_soft = convolved / torch.maximum(convolved.sum(dim=(1), keepdim=True), self.eps)
+
+        if self.allow_overshoot:
+            target_focal = target_hot * target_soft
+            output_focal = target_hot * output
+
+            output_exceeds_target = output_focal > target_focal
+            output_focal_adjusted = torch.where(output_exceeds_target, target_soft, output)
+
+            difference = output.sum(dim=1, keepdim=True) - output_focal_adjusted.sum(dim=1, keepdim=True)
+
+            normed = output / (output.sum(dim=1, keepdim=True) - difference)
+            target_soft = torch.where(~output_exceeds_target, normed, output_focal_adjusted)
 
         # Calculate the loss using the smoothed targets.
         loss = _calculate_loss(output, target_soft, target_hot, self.loss_method, self.eps)

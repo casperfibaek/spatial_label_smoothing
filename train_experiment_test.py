@@ -48,7 +48,7 @@ def run_test(
     #     print(f"Test {NAME} already run. Skipping...")
     #     return
 
-    NAME = "TESTTESTTEST_new_mixer_class_offset_simple"
+    NAME = "TESTTESTTEST_new_mixer_class_offset_defaults"
 
     log_file = open(f"./logs/{NAME}.csv", "w")
 

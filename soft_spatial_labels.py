@@ -395,3 +395,156 @@ class SoftSpatialSegmentationLoss(nn.Module):
         loss = _calculate_loss(output, target_soft, target_hot, self.loss_method, self.eps)
 
         return loss
+
+
+
+class SoftSpatialSegmentationLossSimple(nn.Module):
+    """
+    This loss allows the targets for the cross entropy loss to be multi-label.
+    The labels are smoothed by a spatial gaussian kernel before being normalized.
+
+    Input is expected to be of shape [B, C, H, W] and target is expected to be class integers of the shape [B, 1, H, W].
+
+    Parameters
+    ----------
+    method : str, optional
+        The method to use for smoothing the labels. One of 'half', 'max', or None.
+        By setting a method, you ensure that the center pixel will never 'flip' to another class.
+        Default is 'half'.
+        - `'half'` will set the pixel to at least half the sum of the weighted classes for the pixel.
+        - `'kernel_half'` will set the center of the kernel to be weighted as half the sum of the surrounding weighted classes. Multiplied by `(1 + self.kernel_size) / self.kernel_size`.
+        - `'max'` will set the center of the kernel to be weighted as the maximum of the surrounding weighted classes. Multiplied by `(1 + self.kernel_size) / self.kernel_size`. 
+        - `None` will not treat the center pixel differently. Does not ensure that the center pixel will not 'flip' to another class.
+
+    loss_method : callable
+        The loss function to use. Must be a callable that takes two arguments: output and target_soft.
+    
+    classes : list[int]
+        A sorted (ascending) list of the classes to use for the loss.
+        Should correspond to the classes in the target. I.e. for ESA WorldCover it should be
+        `[10, 20, 30, 40, 50, 60, 70, 80, 90, 95, 100]`.
+
+    kernel_radius : float, optional
+        The radius of the gaussian kernel. Default is 1.0. Can be fractional.
+
+    kernel_circular : bool, optional
+        Whether to use a circular kernel or not. Default is True.
+
+    kernel_sigma : float, optional
+        The sigma of the gaussian kernel. Default is 2.0. Can be fractional.
+
+    epsilon : float, optional
+        A small value to add to the denominator to avoid division by zero. Default is 1e-07.
+
+    device : str, optional
+        The device to use for the computations. Default is 'cuda' if available, else 'cpu'.
+
+    channel_last : bool, optional
+        Whether the input is channel last or not. Default is False.
+    """
+    def __init__(
+        self,
+        method: Optional[str] = "half",
+        loss_fn: Optional[callable] = None,
+        classes: Optional[list[int]] = None,
+        kernel_radius: float = 1.0,
+        kernel_circular: bool = True,
+        kernel_sigma: float = 2.0,
+        epsilon: float = 1e-07,
+        device: Optional[str] = None,
+        channel_last: bool = False,
+    ) -> None:
+        super().__init__()
+        assert method in ["half", "kernel_half", "max", None], \
+            "method must be one of 'half', 'kernel_half', 'max', or None"
+        assert isinstance(classes, list) and len(classes) > 1, "classes must be a list of at least two ints"
+        assert classes == sorted(classes), "classes must be sorted in ascending order"
+
+        if device is None:
+            self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        else:
+            self.device = device
+
+        self.method = method
+        self.loss_fn = loss_fn
+        self.channel_last = channel_last
+        self.eps = torch.Tensor([epsilon]).to(self.device)
+
+        # Precalculate the classes and reshape them for broadcasting
+        self.classes_count = len(classes)
+        self.classes = torch.Tensor(classes).view(1, -1, 1, 1).to(self.device)
+
+        # Calculate the kernel using numpy. It is slower, but it is only done once.
+        self.kernel_np = create_kernel(
+            radius=kernel_radius,
+            circular=kernel_circular,
+            distance_weighted=True,
+            hole=False if method in [None, "max"] else True,
+            method=3,
+            sigma=kernel_sigma,
+            normalised=False
+        )
+
+        # To ensure that the classes are not tied in probability, we multiply the center of the kernel by a factor
+        # E.g. if the kernel is 5x5, then the center pixel will be multiplied by 25 / (25 - 1) = 1.04
+        self.kernel_size = self.kernel_np.size
+        self.kernel_width = self.kernel_np.shape[1]
+        self.strength = self.kernel_size / (self.kernel_size - 1.0)
+
+        # Set the center of the kernel to be at least half the sum of the surrounding weighted classes
+        if method == "kernel_half":
+            self.kernel_np[self.kernel_np.shape[0] // 2, self.kernel_np.shape[1] // 2] = self.kernel_np.sum() * self.strength
+
+        # Padding for conv2d
+        self.padding = (self.kernel_np.shape[0] - 1) // 2
+
+        # Turn the 2D kernel into a 4D kernel for conv2d
+        self.kernel = torch.Tensor(self.kernel_np).unsqueeze(0).repeat(self.classes_count, 1, 1, 1).to(device)
+
+    def forward(self, output: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        """ Expects input to be of shape [B, C, H, W] or [B, H, W, C] if channel_last is True. """
+        if self.channel_last:
+            output = output.permute(0, 3, 1, 2)
+            target = target.permute(0, 3, 1, 2)
+
+        # One-hot encode the target and cast to float
+        target_hot = (target == self.classes).float()
+
+        # Pad the targets using the same padding as the kernel and 'same' padding
+        target_hot_pad = F.pad(target_hot, pad=(self.padding, self.padding, self.padding, self.padding), mode="replicate")
+
+        # Convolve the padded targets with the custom kernel
+        convolved = F.conv2d(
+            target_hot_pad,
+            weight=self.kernel,
+            bias=None,
+            padding=self.padding,
+            groups=self.classes_count,
+        )
+
+        # Handle the flip protection methods
+        if self.method == "max":
+            valmax, argmax = torch.max(convolved, dim=1, keepdim=True)
+            _, argmax_hot = torch.max(target_hot_pad, dim=1, keepdim=True)
+
+            weight = torch.where(argmax == argmax_hot, convolved, valmax * self.strength)
+            convolved = torch.where(target_hot_pad == 1, weight, convolved)
+
+        elif self.method == "half":
+            weight = self.kernel_np.sum() * self.strength
+            convolved = torch.where(target_hot_pad == 1, weight, convolved)
+
+        # No handling necessary for these two methods
+        elif self.method == "kernel_half" or self.method is None:
+            pass
+
+        # Remove the padding
+        convolved = convolved[:, :, self.padding:-self.padding, self.padding:-self.padding]
+
+        # The output is not normalised, so we can either apply softmax or normalise it using the sum.
+        target_soft = convolved / torch.maximum(convolved.sum(dim=(1), keepdim=True), self.eps)
+
+        # Calculate the loss using the smoothed targets.
+        loss = self.loss_fn(output, target_soft)
+
+        return loss

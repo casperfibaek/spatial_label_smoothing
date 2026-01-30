@@ -178,8 +178,8 @@ class MLPMixer(nn.Module):
         embedding_dims=[32, 32, 32],
         patch_sizes=[8, 4, 2],
         expansion=2,
-        drop_n=0.0,
-        drop_p=0.0,
+        drop_n=0.1,
+        drop_p=0.1,
     ):
         super(MLPMixer, self).__init__()
         self.chw = chw
@@ -259,7 +259,8 @@ class MLPMixer(nn.Module):
 
     def forward(self, identity):
         skip = self.stem(identity)
-        skip = torch.nn.functional.pad(skip, (0, 0, self.class_boundary, 0), mode="constant", value=1.0)
+        skip = torch.nn.functional.pad(skip, (0, 0, self.class_boundary, 0), mode="constant", value=0.0)
+
         x = skip
 
         for i, layer in enumerate(self.mixer_layers):
@@ -294,6 +295,10 @@ if __name__ == "__main__":
     model = MLPMixer(
         chw=(10, 64, 64),
         output_dim=1,
+        # embedding_dims=32,
+        # expansion=2,
+        # drop_n=0.0,
+        # drop_p=0.0,
     )
     model(torch.randn((BATCH_SIZE, CHANNELS, HEIGHT, WIDTH)))
 
